@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Connect Tracks",
+    "slug": "connect-tracks",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#EEF2F7",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mithatcanturan.connecttracks",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.mithatcanturan.connecttracks",
+      "predictiveBackGestureEnabled": false,
+      "adaptiveIcon": {
+        "backgroundColor": "#EEF2F7"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

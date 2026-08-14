@@ -1,0 +1,427 @@
+// The board: clue gutters, the framed grid, the two border terminals, and every
+// touch the game understands.
+//
+// All input arrives through one PanResponder on the grid rather than per-cell
+// pressables, because three of the four gestures are *strokes* — painting ✕
+// across a settled row, and drawing the route — and a stroke can't be assembled
+// out of independent button presses. Cells are `pointerEvents="none"` so the
+// container always owns the touch, and a grant records the page-space origin of
+// the grid (page minus location) so later move events can be resolved to a cell
+// without measuring anything.
+//
+// The rail gesture and the deduction gestures share the grid for the whole
+// board rather than taking turns: a touch landing on the drawn rail — or on the
+// entry, before there is one — pays out track, and every other touch marks a
+// square. Since a rail can only be extended from its own end, no square is ever
+// ambiguous, which is what lets the player lay track as soon as they can see it
+// instead of holding it in their head until the deduction is finished.
+//
+// Double tap is handled optimistically: the first tap applies its ✕ immediately
+// and the second *replaces* it with a claim. Waiting out the double-tap window
+// before showing anything would put ~250ms of lag on the single most repeated
+// action in the game; taking it back is invisible by comparison.
+
+import React, { useMemo, useRef } from "react";
+import { PanResponder, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import Svg, { Polygon } from "react-native-svg";
+
+import {
+  connectStep,
+  grabsRail,
+  isAutoBlocked,
+  lineOverCrossed,
+  MARK_BLOCKED,
+  MARK_NONE,
+  MARK_TRACK,
+  markAt,
+  rowFound,
+  colFound,
+  routePieces,
+  shownPiece,
+  type Marks,
+} from "../game/board";
+import { key, same, type Coord, type Dir, type Piece, type Puzzle } from "../game/types";
+import { radius, theme } from "../theme";
+import { Cell } from "./Cell";
+import { TrainRide } from "./TrainRide";
+
+const DOUBLE_TAP_MS = 280;
+
+/**
+ * Nothing on the board may be selected — a web necessity, not a nicety.
+ *
+ * Left selectable, a stroke across the grid selects the clue digits, and the
+ * *next* press inside that selection is read by the browser as the start of a
+ * native drag-and-drop: `dragstart` fires, the pointer stream is cancelled, and
+ * the responder is terminated mid-gesture, so the rail silently stops following
+ * the finger. Phones never see it; the web build did.
+ *
+ * The cast is because React Native's `ViewStyle` doesn't carry `userSelect` —
+ * it is web-only, and ignored everywhere else.
+ */
+const NO_SELECT = { userSelect: "none" } as unknown as ViewStyle;
+
+export type Phase = "deduce" | "connect" | "won";
+
+export type BoardProps = {
+  puzzle: Puzzle;
+  marks: Marks;
+  route: Coord[];
+  phase: Phase;
+  /** Width the board may occupy, gutters included. */
+  width: number;
+  /** Cells to draw dimmed pieces on — the shape hint. */
+  ghosts?: Map<number, Piece>;
+  hint?: Coord | null;
+  wrong?: Coord | null;
+  onTap: (cell: Coord) => void;
+  onClaim: (cell: Coord) => void;
+  onPaint: (cell: Coord, value: number) => void;
+  onRoute: (route: Coord[]) => void;
+  /** Pay the rail out towards this cell — it may claim squares on the way. */
+  onRail: (target: Coord) => void;
+  riding?: boolean;
+  onRideDone?: () => void;
+};
+
+export function Board(props: BoardProps) {
+  const { puzzle, marks, route, phase, width, ghosts, hint, wrong, riding, onRideDone } = props;
+  const n = puzzle.size;
+
+  const gutter = Math.max(22, Math.min(34, width * 0.085));
+  const frame = 3;
+  const cell = Math.floor((width - gutter - frame * 2) / n);
+  const grid = cell * n;
+
+  // Everything the gesture handlers need, refreshed every render — the
+  // responder itself is created once and would otherwise capture stale props.
+  const live = useRef({ ...props, cell, n });
+  live.current = { ...props, cell, n };
+
+  const gesture = useRef<{
+    mode: "none" | "paint" | "route";
+    paintTo: number | null;
+    last: Coord | null;
+    /** The refused-claim flash as it stood when the stroke began. */
+    wrongAt: Coord | null;
+    ox: number;
+    oy: number;
+  }>({ mode: "none", paintTo: null, last: null, wrongAt: null, ox: 0, oy: 0 });
+  const lastTap = useRef<{ r: number; c: number; t: number } | null>(null);
+
+  const responder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderTerminationRequest: () => false,
+
+        onPanResponderGrant: (e) => {
+          const g = gesture.current;
+          const { locationX, locationY, pageX, pageY } = e.nativeEvent;
+          g.ox = pageX - locationX;
+          g.oy = pageY - locationY;
+          g.mode = "none";
+          g.paintTo = null;
+          g.wrongAt = live.current.wrong ?? null;
+
+          const at = cellAt(locationX, locationY, live.current.cell, live.current.n);
+          g.last = at;
+          if (!at) return;
+          const { puzzle: p, marks: m, route: rt, phase: ph } = live.current;
+
+          // Rail first, and at any point in the board — a touch on the drawn
+          // rail (or on the entry, before there is one) pays track out under the
+          // finger whether or not the deduction is finished. Once it *is*
+          // finished there are no marks left to make, so any touch may extend
+          // the rail; before that only a touch on the rail itself does, which is
+          // what keeps the two gestures from fighting over the same square.
+          if (ph === "connect" || (ph === "deduce" && grabsRail(p, rt, at))) {
+            g.mode = "route";
+            // Taking hold of the rail is not itself a move: putting a finger
+            // down on a drawn cell leaves the rail exactly where it is, and
+            // only dragging back off it rubs anything out. A touch anywhere
+            // else takes the step if it's a legal one.
+            if (!rt.some((c) => same(c, at))) {
+              const next = connectStep(p, m, rt, at);
+              if (next) live.current.onRoute(next);
+            }
+            return;
+          }
+          if (ph !== "deduce") return;
+          if (shownPiece(p, at.r, at.c) !== null) return; // a printed clue is fixed
+
+          const before = markAt(m, p.size, at.r, at.c);
+          const prev = lastTap.current;
+          const now = Date.now();
+          if (prev && prev.r === at.r && prev.c === at.c && now - prev.t < DOUBLE_TAP_MS) {
+            lastTap.current = null;
+            live.current.onClaim(at);
+            return;
+          }
+          lastTap.current = { r: at.r, c: at.c, t: now };
+          live.current.onTap(at);
+          // A stroke continues whatever the first tap just did — and never
+          // rubs out a claim, which is hard-won and easy to swipe over.
+          g.mode = "paint";
+          g.paintTo =
+            before === MARK_NONE ? MARK_BLOCKED : before === MARK_BLOCKED ? MARK_NONE : null;
+        },
+
+        onPanResponderMove: (e, state) => {
+          const g = gesture.current;
+          if (g.mode === "none") return;
+          const at = cellAt(
+            state.moveX - g.ox,
+            state.moveY - g.oy,
+            live.current.cell,
+            live.current.n,
+          );
+          if (!at || (g.last && same(at, g.last))) return;
+          g.last = at;
+          lastTap.current = null; // a stroke is not the first half of a double tap
+
+          if (g.mode === "paint" && g.paintTo !== null) {
+            live.current.onPaint(at, g.paintTo);
+          } else if (g.mode === "route") {
+            // A push that cost a heart ends the stroke. The rail can claim as it
+            // goes, and one careless flick shouldn't be able to spend all three
+            // — being made to lift the finger is the pause that costs nothing
+            // and stops a mistake from compounding.
+            const w = live.current.wrong ?? null;
+            if (w && w !== g.wrongAt) {
+              g.mode = "none";
+              return;
+            }
+            // While the finger is down the rail's end follows it: dragging back
+            // onto a cell the rail already runs through winds it back to there,
+            // and anything else pays more track out.
+            const idx = live.current.route.findIndex((c) => same(c, at));
+            if (idx >= 0) {
+              if (idx < live.current.route.length - 1) {
+                live.current.onRoute(live.current.route.slice(0, idx + 1));
+              }
+            } else {
+              live.current.onRail(at);
+            }
+          }
+        },
+
+        onPanResponderRelease: () => {
+          gesture.current.mode = "none";
+          gesture.current.last = null;
+        },
+        onPanResponderTerminate: () => {
+          gesture.current.mode = "none";
+          gesture.current.last = null;
+        },
+      }),
+    [],
+  );
+
+  // --- what to draw ---------------------------------------------------------
+  const drawn = useMemo(() => routePieces(puzzle, route), [puzzle, route]);
+  // The lit cell is where the next rail goes: the moving end of the drawn route,
+  // or — before there is one — the entry, the only place a rail may start. It is
+  // lit from the first moment of the board, because that is when laying rail
+  // becomes possible; nothing is lit once the board is won and there is no next
+  // step to point at.
+  const head =
+    phase === "won"
+      ? null
+      : route.length
+        ? route[route.length - 1]
+        : { r: puzzle.entry.r, c: puzzle.entry.c };
+
+  const cells: React.ReactNode[] = [];
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      const k = key(r, c);
+      const fixedPiece = shownPiece(puzzle, r, c);
+      const laid = drawn.get(k) ?? null;
+      const ghost = ghosts?.get(k) ?? null;
+      const mark = markAt(marks, n, r, c);
+      // The printed clue outranks everything: it is the same piece the rail
+      // would draw anyway, and it stays whole while the rail's end rests on it.
+      const piece = fixedPiece !== null ? fixedPiece : laid !== null ? laid : ghost;
+      cells.push(
+        <Cell
+          key={k}
+          size={cell}
+          r={r}
+          c={c}
+          piece={piece}
+          ghost={piece !== null && laid === null && fixedPiece === null}
+          claimed={piece === null && mark === MARK_TRACK}
+          blocked={mark === MARK_BLOCKED}
+          auto={mark === MARK_NONE && isAutoBlocked(puzzle, marks, r, c)}
+          glow={(head !== null && head.r === r && head.c === c) || (!!hint && hint.r === r && hint.c === c)}
+          wrong={!!wrong && wrong.r === r && wrong.c === c}
+        />,
+      );
+    }
+  }
+
+  const lines: React.ReactNode[] = [];
+  for (let i = 1; i < n; i++) {
+    lines.push(
+      <View key={`v${i}`} style={[styles.vLine, { left: i * cell, height: grid }]} />,
+      <View key={`h${i}`} style={[styles.hLine, { top: i * cell, width: grid }]} />,
+    );
+  }
+
+  return (
+    <View style={[{ width: gutter + grid + frame * 2 }, NO_SELECT]}>
+      {/* column clues */}
+      <View style={[styles.row, { marginLeft: gutter + frame, height: gutter }]}>
+        {puzzle.cols.map((clue, c) => (
+          <Clue
+            key={c}
+            value={clue}
+            done={colFound(puzzle, marks, c) >= clue}
+            warn={lineOverCrossed(puzzle, marks, c, true)}
+            size={cell}
+          />
+        ))}
+      </View>
+
+      <View style={styles.row}>
+        {/* row clues */}
+        <View style={{ width: gutter, marginTop: frame }}>
+          {puzzle.rows.map((clue, r) => (
+            <Clue
+              key={r}
+              value={clue}
+              done={rowFound(puzzle, marks, r) >= clue}
+              warn={lineOverCrossed(puzzle, marks, r, false)}
+              size={cell}
+              column
+            />
+          ))}
+        </View>
+
+        <View style={[styles.frame, { borderWidth: frame, borderRadius: radius.md }]}>
+          <View style={{ width: grid, height: grid }} {...responder.panHandlers}>
+            {lines}
+            {cells}
+            <Terminal t={puzzle.entry} cell={cell} n={n} inward />
+            <Terminal t={puzzle.exit} cell={cell} n={n} />
+            {riding ? (
+              <TrainRide puzzle={puzzle} cell={cell} onDone={onRideDone} />
+            ) : null}
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function cellAt(x: number, y: number, cell: number, n: number): Coord | null {
+  if (cell <= 0) return null;
+  const c = Math.floor(x / cell);
+  const r = Math.floor(y / cell);
+  if (r < 0 || c < 0 || r >= n || c >= n) return null;
+  return { r, c };
+}
+
+function Clue({
+  value,
+  done,
+  warn,
+  size,
+  column,
+}: {
+  value: number;
+  done: boolean;
+  /** The player has ruled out too much of this line for the clue to be met. */
+  warn?: boolean;
+  size: number;
+  column?: boolean;
+}) {
+  return (
+    <View style={[column ? { height: size } : { width: size }, styles.clue]}>
+      <Text
+        style={{
+          fontSize: Math.min(22, Math.max(13, size * 0.42)),
+          fontWeight: "800",
+          color: warn ? theme.danger : done ? theme.good : theme.textDim,
+        }}
+      >
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * The dark gate on the border where the track enters or leaves.
+ *
+ * Kept deliberately thin: it sits *over* the cell, and a chunky one buries the
+ * piece underneath it — which is the piece the player most needs to read, since
+ * it is one of the two the board gives away. The chevron points the way the
+ * train travels (in at the entry, out at the exit) rather than simply off the
+ * board, so the pair also answers "which end do I drag from".
+ */
+function Terminal({
+  t,
+  cell,
+  n,
+  inward,
+}: {
+  t: { r: number; c: number; dir: Dir };
+  cell: number;
+  n: number;
+  inward?: boolean;
+}) {
+  const thick = Math.max(8, cell * 0.13);
+  const long = cell * 0.58;
+  const pad = (cell - long) / 2;
+  const horizontal = t.dir === 1 || t.dir === 3;
+
+  const box = horizontal
+    ? {
+        width: thick,
+        height: long,
+        top: t.r * cell + pad,
+        left: t.dir === 3 ? 0 : n * cell - thick,
+      }
+    : {
+        width: long,
+        height: thick,
+        left: t.c * cell + pad,
+        top: t.dir === 0 ? 0 : n * cell - thick,
+      };
+
+  const point: Dir = inward ? (((t.dir + 2) % 4) as Dir) : t.dir;
+  const a = thick * 0.62;
+  const h = a * 0.62;
+  const pts =
+    point === 1
+      ? `0,0 ${h},${a / 2} 0,${a}`
+      : point === 3
+        ? `${h},0 0,${a / 2} ${h},${a}`
+        : point === 2
+          ? `0,0 ${a / 2},${h} ${a},0`
+          : `0,${h} ${a / 2},0 ${a},${h}`;
+
+  return (
+    <View pointerEvents="none" style={[styles.terminal, box, { borderRadius: thick * 0.5 }]}>
+      <Svg width={horizontal ? h : a} height={horizontal ? a : h}>
+        <Polygon points={pts} fill="#9DB3C9" />
+      </Svg>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  row: { flexDirection: "row" },
+  clue: { alignItems: "center", justifyContent: "center" },
+  frame: {
+    borderColor: theme.frame,
+    backgroundColor: theme.cell,
+    overflow: "hidden",
+  },
+  vLine: { position: "absolute", top: 0, width: 1, backgroundColor: theme.grid },
+  hLine: { position: "absolute", left: 0, height: 1, backgroundColor: theme.grid },
+  terminal: { position: "absolute", backgroundColor: theme.frame },
+});
