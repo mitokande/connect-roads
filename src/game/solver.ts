@@ -10,7 +10,7 @@
 // prunes that do the real work:
 //
 //   1. **Clue floor** — never enter a row/column whose remaining count is 0.
-//   2. **Clue ceiling** — a row still owing k track cells must have ≥ k cells
+//   2. **Clue ceiling** — a row still owing k road cells must have ≥ k cells
 //      the current partial path hasn't consumed (`freeRow`/`freeCol`).
 //   3. **Reach + parity** — the cells still owed must be exactly enough to get
 //      from here to the exit. Grid paths change length only in steps of two, so
@@ -97,7 +97,7 @@ export function solve(
 
   const inBounds = (r: number, c: number) => r >= 0 && c >= 0 && r < n && c < n;
 
-  /** Prune 2: no row/column may owe more track than it has cells left. */
+  /** Prune 2: no row/column may owe more road than it has cells left. */
   function clueCeilingHolds(): boolean {
     for (let i = 0; i < n; i++) {
       if (rowLeft[i] > freeRow[i]) return false;

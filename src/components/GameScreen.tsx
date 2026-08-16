@@ -2,8 +2,8 @@
 // matters right now.
 //
 // The banner is deliberately a *phase* line rather than a tip feed. There are
-// only two things to know — claim the track cells, and draw the route through
-// them — and although the rail may be laid from the first move, the moment the
+// only two things to know — claim the road cells, and draw the route through
+// them — and although the road may be laid from the first move, the moment the
 // last cell is claimed is the moment the board changes character: nothing is
 // left to deduce and the whole route is drawable. The banner earns its space by
 // marking that transition.
@@ -12,10 +12,11 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Dimensions, StyleSheet, Text, View } from "react-native";
 
-import { foundTotal, trackTotal } from "../game/board";
+import { foundTotal, roadTotal } from "../game/board";
 import { haptics } from "../haptics";
 import type { Game } from "../state/useGame";
 import { MAX_HEARTS } from "../state/useGame";
+import { useGameSounds } from "../state/useGameSounds";
 import { theme } from "../theme";
 import { Board } from "./Board";
 import { IconButton } from "./Button";
@@ -35,6 +36,8 @@ export function GameScreen({
 }) {
   const [help, setHelp] = useState(false);
   const width = Dimensions.get("window").width;
+  // Every noise the board makes, derived from what changed in it.
+  useGameSounds(game);
   const boardWidth = Math.min(width - 22, 460);
 
   // --- shake on a refused claim --------------------------------------------
@@ -51,19 +54,19 @@ export function GameScreen({
     ]).start();
   }, [game.shake, shake]);
 
-  // --- the rail's own tick -------------------------------------------------
-  // Driven off the drawn length rather than the gesture, because a rail step may
+  // --- the road's own tick -------------------------------------------------
+  // Driven off the drawn length rather than the gesture, because a road step may
   // now come from the reducer (a drag that claimed its way forward) or from the
   // hint button, and all three should feel the same under the thumb.
-  const railLen = useRef({ level: game.level, len: game.route.length });
+  const roadLen = useRef({ level: game.level, len: game.route.length });
   useEffect(() => {
-    const was = railLen.current;
-    railLen.current = { level: game.level, len: game.route.length };
-    if (was.level === game.level && was.len !== game.route.length) haptics.rail();
+    const was = roadLen.current;
+    roadLen.current = { level: game.level, len: game.route.length };
+    if (was.level === game.level && was.len !== game.route.length) haptics.road();
   }, [game.level, game.route.length]);
 
   const found = foundTotal(game.marks);
-  const total = trackTotal(game.puzzle);
+  const total = roadTotal(game.puzzle);
 
   return (
     <View style={styles.page}>
@@ -137,7 +140,7 @@ export function GameScreen({
             }}
             onPaint={game.paint}
             onRoute={game.setRoute}
-            onRail={game.rail}
+            onPave={game.pave}
           />
         </Animated.View>
 
@@ -189,7 +192,7 @@ function Banner({
   phase: string;
   found: number;
   total: number;
-  /** Cells of rail already laid — the player may have started early. */
+  /** Cells of road already laid — the player may have started early. */
   drawn: number;
   failed: boolean;
 }) {
@@ -204,16 +207,16 @@ function Banner({
     return (
       <Text style={[styles.banner, { color: theme.accentDark }]}>
         Every piece found — now <Text style={styles.bannerStrong}>drag</Text>{" "}
-        {drawn > 0 ? "the rail on to the exit" : "from the entry to lay the track"}
+        {drawn > 0 ? "the road on to the exit" : "from the entry to lay the road"}
       </Text>
     );
   }
   if (phase === "won") {
-    return <Text style={[styles.banner, { color: theme.goodDark }]}>All aboard!</Text>;
+    return <Text style={[styles.banner, { color: theme.goodDark }]}>Green light — go!</Text>;
   }
   return (
     <Text style={styles.banner}>
-      <Text style={styles.bannerStrong}>Double tap</Text> where track must go · tap or swipe to rule
+      <Text style={styles.bannerStrong}>Double tap</Text> where road must go · tap or swipe to rule
       out{"  "}
       <Text style={{ color: theme.textDim }}>
         {found}/{total}

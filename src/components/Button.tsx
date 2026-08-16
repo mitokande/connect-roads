@@ -5,6 +5,7 @@ import React, { useState } from "react";
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 
 import { haptics } from "../haptics";
+import { sound } from "../sound";
 import { radius, theme } from "../theme";
 
 export type ButtonProps = {
@@ -37,6 +38,7 @@ export function Button({ label, onPress, tone = "primary", size = "md", disabled
       onPress={() => {
         if (disabled) return;
         haptics.tap();
+        sound.press();
         onPress();
       }}
       disabled={disabled}
@@ -87,6 +89,7 @@ export function IconButton({
       onPress={() => {
         if (disabled) return;
         haptics.tap();
+        sound.press();
         onPress();
       }}
       disabled={disabled}

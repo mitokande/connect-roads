@@ -1,11 +1,16 @@
 // Shared visual system — a cool paper-white workbench with one warm accent.
 //
 // Colour is assigned by function, not decoration:
-//   rail / sleeper  the track itself, and nothing else
+//   asphalt / verge the road itself, and nothing else
 //   accent (blue)   primary actions and instructions
 //   good (green)    a clue that is settled, and success
 //   danger (red)    hearts and mistakes
 //   mark            the ✕ glyph — two weights, see below
+//
+// The road is the only place greens and greys are allowed to be this saturated:
+// tarmac, its dashed centre line, and the grass verge that runs alongside it.
+// Everything else on the screen is paper and ink, so the route reads as the one
+// physical thing on the board.
 //
 // The two ✕ weights carry real meaning and shouldn't be collapsed: `markAuto`
 // is the board crossing out cells the clues have already settled, `mark` is the
@@ -40,14 +45,38 @@ export const theme = {
   grid: "#D9E1EA",
   /** An ordinary cell. */
   cell: "#FFFFFF",
-  /** A cell known to carry track — a shade cooler, so track reads as inlaid. */
-  cellTrack: "#DFE7F0",
+  /** A cell known to carry road but not yet paved — a shade cooler. */
+  cellRoad: "#DFE7F0",
   /** A cell the finger is over. */
   cellHot: "#FFF6DA",
 
-  rail: "#22364B",
-  sleeper: "#DFA162",
-  sleeperEdge: "#C0834A",
+  /** Tarmac, its darker kerb line, and the dashes down the middle. */
+  asphalt: "#3B4753",
+  asphaltEdge: "#2B333C",
+  roadLine: "#FFFFFF",
+  /** The grass either side of the road, and what grows on it. */
+  verge: "#B4DD5F",
+  vergeDeep: "#9ACB43",
+  bush: "#71B233",
+  bloom: "#FFFFFF",
+
+  /** The car: body, the dark glass, and its lamps. */
+  car: "#F7C948",
+  carEdge: "#C99700",
+  carGlass: "#2F3B47",
+  carLamp: "#FFF2C2",
+  /**
+   * The convoy that drives a finished board, lead car first. Five of one colour
+   * would read as a copy-paste; five of a colour each reads as traffic, which is
+   * what a finished road is meant to be for.
+   */
+  fleet: [
+    { body: "#F7C948", edge: "#C99700" },
+    { body: "#F4695F", edge: "#C1382F" },
+    { body: "#5DA9F8", edge: "#2D74C0" },
+    { body: "#F2F5F8", edge: "#B4C2D0" },
+    { body: "#6FD08C", edge: "#3B9E5C" },
+  ],
 
   /** The player's own ✕. */
   mark: "#7C8DA0",

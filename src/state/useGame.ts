@@ -5,14 +5,14 @@
 // are consulted and what it costs to be wrong. Two decisions are load-bearing:
 //
 // **A claim is checked, a cross is not.** Double-tapping a cell that has no
-// track is refused and costs a heart, so a ✓ on the board is always true and the
-// rail can trust the claimed set completely. Crossing out is free and
+// road is refused and costs a heart, so a ✓ on the board is always true and the
+// road can trust the claimed set completely. Crossing out is free and
 // unchecked — it is note-taking, and charging for notes would make sweeping a
 // settled row (the game's most common deduction, and the one the tutorial
 // teaches) feel like a gamble.
 //
 // There are two ways to claim and they cost the same: the double tap, and
-// dragging the rail into a square nothing is known about. `refuse` is shared
+// dragging the road into a square nothing is known about. `refuse` is shared
 // between them so that can't drift — a claim that is cheaper by one route would
 // make that route the only one worth using.
 //
@@ -29,13 +29,13 @@ import {
   deductionComplete,
   hintCell,
   initialMarks,
-  isTrackCell,
+  isRoadCell,
   MARK_BLOCKED,
   MARK_NONE,
-  MARK_TRACK,
+  MARK_ROAD,
   markAt,
   nextRouteCell,
-  railStep,
+  paveStep,
   shownPiece,
   trimRoute,
   withMark,
@@ -47,6 +47,8 @@ import { key, type Coord, type Piece, type Puzzle } from "../game/types";
 export const MAX_HEARTS = 3;
 export const STARTING_HINTS = 5;
 const HINT_CAP = 9;
+// Named for the game as it shipped first. It is a key, not a label: renaming
+// it would quietly wipe every existing player's progress.
 const STORE_KEY = "tracks.progress.v1";
 
 export type Phase = "deduce" | "connect" | "won";
@@ -56,6 +58,7 @@ export type Progress = {
   unlockedLevel: number;
   hints: number;
   haptics: boolean;
+  sound: boolean;
   tutorialSeen: boolean;
 };
 
@@ -63,6 +66,7 @@ const DEFAULT_PROGRESS: Progress = {
   unlockedLevel: 1,
   hints: STARTING_HINTS,
   haptics: true,
+  sound: true,
   tutorialSeen: false,
 };
 
@@ -74,7 +78,7 @@ type GameState = {
   phase: Phase;
   hearts: number;
   failed: boolean;
-  /** The train is running; the win card waits for it. */
+  /** The car is running; the win card waits for it. */
   riding: boolean;
   celebrate: boolean;
   /** Cell to flash red — a refused claim. */
@@ -92,7 +96,7 @@ type Action =
   | { type: "CLAIM"; cell: Coord }
   | { type: "PAINT"; cell: Coord; value: number }
   | { type: "ROUTE"; route: Coord[] }
-  | { type: "RAIL"; target: Coord }
+  | { type: "PAVE"; target: Coord }
   | { type: "HINT" }
   | { type: "RIDE_DONE" }
   | { type: "CLEAR_FLASH" };
@@ -119,15 +123,15 @@ function freshBoard(level: number): GameState {
 /** Marks after a change, plus the phase that change may have unlocked. */
 function settle(state: GameState, marks: Marks): GameState {
   const phase: Phase = deductionComplete(state.puzzle, marks) ? "connect" : "deduce";
-  // Rails outlive a mark change only as far as the marks still back them up:
-  // taking a claim back cuts the rail at that cell rather than leaving it
+  // Road outlive a mark change only as far as the marks still back them up:
+  // taking a claim back cuts the road at that cell rather than leaving it
   // hanging off a square that is no longer claimed.
   return { ...state, marks, phase, route: trimRoute(state.puzzle, marks, state.route) };
 }
 
 /**
  * A claim the board refuses: a heart, and the square crossed out instead. Shared
- * by the two ways of claiming — a double tap and a rail pushed into an unknown
+ * by the two ways of claiming — a double tap and a road pushed into an unknown
  * square — because they are the same commitment and must cost the same.
  */
 function refuse(state: GameState, cell: Coord): GameState {
@@ -172,7 +176,7 @@ function reduce(state: GameState, action: Action): GameState {
       const { r, c } = action.cell;
       if (shownPiece(state.puzzle, r, c) !== null) return state;
       const now = markAt(state.marks, state.puzzle.size, r, c);
-      if (now === MARK_TRACK || now === action.value) return state;
+      if (now === MARK_ROAD || now === action.value) return state;
       return settle(state, withMark(state.marks, state.puzzle.size, r, c, action.value));
     }
 
@@ -180,41 +184,41 @@ function reduce(state: GameState, action: Action): GameState {
       if (state.failed || state.phase !== "deduce") return state;
       const { r, c } = action.cell;
       if (shownPiece(state.puzzle, r, c) !== null) return state;
-      if (markAt(state.marks, state.puzzle.size, r, c) === MARK_TRACK) return state;
+      if (markAt(state.marks, state.puzzle.size, r, c) === MARK_ROAD) return state;
 
       // A refused claim leaves the cell crossed out: it *is* now known to be
       // empty, and paying a heart for nothing would be worse than the mistake.
-      if (!isTrackCell(state.puzzle, r, c)) return refuse(state, action.cell);
-      return settle(state, withMark(state.marks, state.puzzle.size, r, c, MARK_TRACK));
+      if (!isRoadCell(state.puzzle, r, c)) return refuse(state, action.cell);
+      return settle(state, withMark(state.marks, state.puzzle.size, r, c, MARK_ROAD));
     }
 
     case "ROUTE": {
-      // Rails are drawable throughout, so this is refused only once the board is
+      // Road are drawable throughout, so this is refused only once the board is
       // over. Finishing the route still means the deduction is finished too: a
-      // complete route is `trackTotal` distinct claimed cells, and claims are
-      // checked, so every track cell must have been found to draw it.
+      // complete route is `roadTotal` distinct claimed cells, and claims are
+      // checked, so every road cell must have been found to draw it.
       if (state.failed || state.phase === "won") return state;
       return laid(state, action.route);
     }
 
-    case "RAIL": {
-      // The rail paid out towards where the finger is, one step at a time. A
+    case "PAVE": {
+      // The road paid out towards where the finger is, one step at a time. A
       // step onto an unknown square is a claim, so this loop is where the two
-      // halves of the game meet: it can lay track, find track, or cost a heart.
+      // halves of the game meet: it can lay road, find road, or cost a heart.
       if (state.failed || state.phase === "won") return state;
       let s = state;
       for (let guard = 0; guard < 12; guard++) {
-        const step = railStep(s.puzzle, s.marks, s.route, action.target);
+        const step = paveStep(s.puzzle, s.marks, s.route, action.target);
         if (!step) break;
         if (step.kind === "move") {
           s = laid(s, step.route);
           if (s.phase === "won") break;
           continue;
         }
-        // A wrong push stops the rail where it stands — the square it tried is
+        // A wrong push stops the road where it stands — the square it tried is
         // now crossed out, and the shake is the answer to the gesture.
-        if (!isTrackCell(s.puzzle, step.cell.r, step.cell.c)) return refuse(s, step.cell);
-        s = settle(s, withMark(s.marks, s.puzzle.size, step.cell.r, step.cell.c, MARK_TRACK));
+        if (!isRoadCell(s.puzzle, step.cell.r, step.cell.c)) return refuse(s, step.cell);
+        s = settle(s, withMark(s.marks, s.puzzle.size, step.cell.r, step.cell.c, MARK_ROAD));
       }
       return s;
     }
@@ -238,7 +242,7 @@ function reduce(state: GameState, action: Action): GameState {
       const cell = hintCell(state.puzzle, state.marks);
       if (!cell) return state;
       return {
-        ...settle(state, withMark(state.marks, state.puzzle.size, cell.r, cell.c, MARK_TRACK)),
+        ...settle(state, withMark(state.marks, state.puzzle.size, cell.r, cell.c, MARK_ROAD)),
         hint: cell,
         hintsUsed: state.hintsUsed + 1,
       };
@@ -352,7 +356,7 @@ export function useGame() {
       [],
     ),
     setRoute: useCallback((route: Coord[]) => dispatch({ type: "ROUTE", route }), []),
-    rail: useCallback((target: Coord) => dispatch({ type: "RAIL", target }), []),
+    pave: useCallback((target: Coord) => dispatch({ type: "PAVE", target }), []),
     rideDone: useCallback(() => dispatch({ type: "RIDE_DONE" }), []),
     useHint,
     patch,

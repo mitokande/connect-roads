@@ -7,7 +7,7 @@ import { HORZ } from "../game/types";
 import type { Progress } from "../state/useGame";
 import { radius, shadow, theme } from "../theme";
 import { Button, IconButton } from "./Button";
-import { TrackPiece } from "./TrackPiece";
+import { RoadPiece } from "./RoadPiece";
 
 export function HomeScreen({
   progress,
@@ -38,13 +38,13 @@ export function HomeScreen({
 
       <View style={styles.hero}>
         <Text style={styles.title}>CONNECT</Text>
-        <Text style={styles.title}>TRACKS</Text>
+        <Text style={styles.title}>ROADS</Text>
         <View style={styles.strip}>
           {Array.from({ length: 5 }, (_, i) => (
-            <TrackPiece key={i} size={38} piece={HORZ} />
+            <RoadPiece key={i} size={38} piece={HORZ} />
           ))}
         </View>
-        <Text style={styles.tagline}>Count the clues. Lay the rails.</Text>
+        <Text style={styles.tagline}>Count the clues. Lay the road.</Text>
       </View>
 
       <View style={styles.card}>
@@ -88,13 +88,9 @@ const styles = StyleSheet.create({
     color: theme.text,
     letterSpacing: 1.5,
   },
-  strip: {
-    flexDirection: "row",
-    marginTop: 16,
-    backgroundColor: theme.cellTrack,
-    borderRadius: radius.sm,
-    overflow: "hidden",
-  },
+  // No plate behind the road: the piece draws its own verges, and a panel
+  // showing above and below them reads as a strip of something else.
+  strip: { flexDirection: "row", marginTop: 16 },
   tagline: { marginTop: 14, fontSize: 15, fontWeight: "600", color: theme.textDim },
   card: {
     backgroundColor: theme.panel,

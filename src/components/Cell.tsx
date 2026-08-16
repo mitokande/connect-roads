@@ -1,16 +1,16 @@
 // One square of the board. Draws whatever the cell currently is: bare, crossed
-// out, claimed-but-unshaped, or a piece of railway.
+// out, claimed-but-unpaved, or a piece of road.
 //
-// The claim glyph is worth a word. A double tap means "there is track here" —
+// The claim glyph is worth a word. A double tap means "there is road here" —
 // which in this puzzle is knowledge you can have long before you know *which*
-// piece it is. So it draws four rail ends poking in from the four edges with a
-// ? between them: track passes through, shape unknown. Replacing it with the
-// real piece is the second half of the game.
+// piece it is. So it draws four stubs of tarmac poking in from the four edges
+// with a ? between them: road passes through, shape unknown. Replacing it with
+// the real piece is the second half of the game.
 //
-// Backgrounds are transparent for a bare cell so the grid's hairlines show
-// through, and opaque for a claimed one so they don't — which is what makes
-// found track read as a solid ribbon across the board rather than as a set of
-// separately shaded squares.
+// A square holding a drawn piece keeps the board's own white behind it: the road
+// brings its own grass and kerbs, and a tint under that would fight them. The
+// cooler shade is for a claim that has no road on it yet, where being able to
+// see at a glance which squares are settled is the whole point.
 
 import React from "react";
 import { StyleSheet, View } from "react-native";
@@ -18,7 +18,7 @@ import Svg, { Line, Path, Rect, Text as SvgText } from "react-native-svg";
 
 import type { Piece } from "../game/types";
 import { theme } from "../theme";
-import { TrackPiece } from "./TrackPiece";
+import { RoadPiece } from "./RoadPiece";
 
 export type CellProps = {
   size: number;
@@ -38,8 +38,6 @@ export type CellProps = {
 };
 
 function CellView({ size, r, c, piece, ghost, claimed, blocked, auto, glow, wrong }: CellProps) {
-  const shaded = claimed || piece !== null;
-
   return (
     <View
       pointerEvents="none"
@@ -54,14 +52,14 @@ function CellView({ size, r, c, piece, ghost, claimed, blocked, auto, glow, wron
             ? "#FDE4E1"
             : glow
               ? theme.cellHot
-              : shaded
-                ? theme.cellTrack
+              : claimed && piece === null
+                ? theme.cellRoad
                 : "transparent",
         },
       ]}
     >
       {piece !== null ? (
-        <TrackPiece size={size} piece={piece} faded={ghost} />
+        <RoadPiece size={size} piece={piece} faded={ghost} />
       ) : claimed ? (
         <ClaimGlyph size={size} />
       ) : blocked || auto ? (
@@ -71,18 +69,18 @@ function CellView({ size, r, c, piece, ghost, claimed, blocked, auto, glow, wron
   );
 }
 
-/** "Track runs through here, shape unknown." */
+/** "Road runs through here, shape unknown." */
 function ClaimGlyph({ size: s }: { size: number }) {
   const stub = s * 0.17;
-  const w = Math.max(2, s * 0.075);
+  const w = Math.max(2, s * 0.11);
   const box = s * 0.5;
   return (
     <Svg width={s} height={s}>
-      {/* rail ends poking in from each edge */}
-      <Line x1={s / 2} y1={0} x2={s / 2} y2={stub} stroke={theme.rail} strokeWidth={w} opacity={0.5} />
-      <Line x1={s / 2} y1={s} x2={s / 2} y2={s - stub} stroke={theme.rail} strokeWidth={w} opacity={0.5} />
-      <Line x1={0} y1={s / 2} x2={stub} y2={s / 2} stroke={theme.rail} strokeWidth={w} opacity={0.5} />
-      <Line x1={s} y1={s / 2} x2={s - stub} y2={s / 2} stroke={theme.rail} strokeWidth={w} opacity={0.5} />
+      {/* tarmac poking in from each edge */}
+      <Line x1={s / 2} y1={0} x2={s / 2} y2={stub} stroke={theme.asphalt} strokeWidth={w} opacity={0.4} />
+      <Line x1={s / 2} y1={s} x2={s / 2} y2={s - stub} stroke={theme.asphalt} strokeWidth={w} opacity={0.4} />
+      <Line x1={0} y1={s / 2} x2={stub} y2={s / 2} stroke={theme.asphalt} strokeWidth={w} opacity={0.4} />
+      <Line x1={s} y1={s / 2} x2={s - stub} y2={s / 2} stroke={theme.asphalt} strokeWidth={w} opacity={0.4} />
       <Rect
         x={(s - box) / 2}
         y={(s - box) / 2}

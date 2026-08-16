@@ -20,8 +20,8 @@ export const haptics = {
   tap: () => fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)),
   /** A claim — the committing move, so it lands harder. */
   claim: () => fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)),
-  /** One more cell of rail. */
-  rail: () => fire(() => Haptics.selectionAsync()),
+  /** One more cell of road. */
+  road: () => fire(() => Haptics.selectionAsync()),
   wrong: () => fire(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)),
   win: () => fire(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)),
 };

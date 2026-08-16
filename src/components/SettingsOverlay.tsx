@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 
 import { haptics } from "../haptics";
+import { sound } from "../sound";
 import type { Progress } from "../state/useGame";
 import { radius, shadow, theme } from "../theme";
 import { Button } from "./Button";
@@ -32,6 +33,20 @@ export function SettingsOverlay({
               haptics.setEnabled(on);
               if (on) haptics.tap();
               onPatch({ haptics: on });
+            }}
+            trackColor={{ true: theme.good, false: theme.panelEdge }}
+            thumbColor="#FFFFFF"
+          />
+        </Row>
+
+        <Row icon="volume-high" label="Sound">
+          <Switch
+            value={progress.sound}
+            onValueChange={(on) => {
+              sound.setEnabled(on);
+              // Play the toggle's own click, so "on" proves itself immediately.
+              if (on) sound.press();
+              onPatch({ sound: on });
             }}
             trackColor={{ true: theme.good, false: theme.panelEdge }}
             thumbColor="#FFFFFF"

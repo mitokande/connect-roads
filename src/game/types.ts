@@ -1,6 +1,7 @@
-// Core vocabulary for the Train Tracks puzzle.
+// Core vocabulary for the puzzle — the newspaper one called Train Tracks,
+// which this game dresses as roads and cars.
 //
-// The board is an n×n grid. A **track piece** occupies a cell and joins exactly
+// The board is an n×n grid. A **road piece** occupies a cell and joins exactly
 // two of its four edges, so a piece is nothing more than a 2-bit mask of the
 // directions it opens onto — which makes "does this piece meet that one" a
 // bitwise test rather than a table lookup. There are six pieces: two straights
@@ -8,7 +9,7 @@
 //
 // The solution is a single **path**: an ordered list of cells that enters the
 // grid at `entry` and leaves it at `exit`, never re-using a cell. Two cells of
-// the path may sit side by side without being joined (the track runs alongside
+// the path may sit side by side without being joined (the road runs alongside
 // itself) — that is legal and common; the only hard rule is one piece per cell.
 
 /** N, E, S, W. The grid's y axis points down, so S is `row + 1`. */
@@ -32,8 +33,8 @@ export const opposite = (d: Dir): Dir => ((d + 2) % 4) as Dir;
 export const bit = (d: Dir): number => 1 << d;
 
 /**
- * A track piece as a mask of the two edges it opens onto; `EMPTY` (0) means the
- * cell holds no track. Never construct one by hand — use {@link piece}.
+ * A road piece as a mask of the two edges it opens onto; `EMPTY` (0) means the
+ * cell holds no road. Never construct one by hand — use {@link piece}.
  */
 export type Piece = number;
 
@@ -81,18 +82,18 @@ export function dirBetween(a: Coord, b: Coord): Dir {
   throw new Error(`cells (${a.r},${a.c}) and (${b.r},${b.c}) are not adjacent`);
 }
 
-/** Where the track crosses the border. `dir` points *off* the grid. */
+/** Where the road crosses the border. `dir` points *off* the grid. */
 export type Terminal = { r: number; c: number; dir: Dir };
 
 export type Puzzle = {
   size: number;
-  /** Track cells per row, top → bottom. */
+  /** Road cells per row, top → bottom. */
   rows: number[];
-  /** Track cells per column, left → right. */
+  /** Road cells per column, left → right. */
   cols: number[];
   entry: Terminal;
   exit: Terminal;
-  /** `size × size` of {@link Piece}; `EMPTY` where the solution has no track. */
+  /** `size × size` of {@link Piece}; `EMPTY` where the solution has no road. */
   solution: Piece[][];
   /** The solution as an ordered walk, `entry` cell first, `exit` cell last. */
   path: Coord[];
@@ -106,6 +107,6 @@ export type Puzzle = {
 };
 
 /** What the player has asserted about a cell during the deduction phase. */
-export type Mark = "none" | "track" | "blocked";
+export type Mark = "none" | "road" | "blocked";
 
 export const key = (r: number, c: number): number => r * 100 + c;

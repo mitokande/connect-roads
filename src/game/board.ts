@@ -4,7 +4,7 @@
 //
 // A board is played in two phases:
 //
-//   **Deduce** — every cell is marked either "there is track here" (✓, placed by
+//   **Deduce** — every cell is marked either "there is road here" (✓, placed by
 //   double tap) or "there is none" (✕, single tap or a swipe). ✓ is the
 //   committing move and is checked against the solution — a wrong one is
 //   refused and costs a heart. ✕ is only a note: it is never checked, so
@@ -13,18 +13,18 @@
 //   freely, but you may not *claim* freely.
 //
 //   **Connect** — the shape of the route is still unknown, and the player drags
-//   from the entry terminal through the ✓ cells to lay the actual rails. Only
+//   from the entry terminal through the ✓ cells to lay the actual road. Only
 //   moves that could belong to the solution are accepted, so the drag can wander
-//   but can never draw something wrong. Dragging the rail into a square nothing
+//   but can never draw something wrong. Dragging the road into a square nothing
 //   is known about *claims* it — same commitment, same heart if it is wrong —
-//   which is the deduction move made with the same finger that lays the track.
+//   which is the deduction move made with the same finger that lays the road.
 //
-// The two overlap: rails may be laid **at any point**, not only once every track
+// The two overlap: road may be laid **at any point**, not only once every road
 // cell has been found, because a partly-deduced board often already has an
-// obvious stretch of rail in it and making the player hold that in their head
+// obvious stretch of road in it and making the player hold that in their head
 // until the end is busywork. `connectStep` only ever accepts a claimed cell, and
-// a claim is checked, so early rails are as safe as late ones — the phase flip
-// marks when the *last* rail becomes drawable, not when the first one does.
+// a claim is checked, so early road are as safe as late ones — the phase flip
+// marks when the *last* road becomes drawable, not when the first one does.
 
 import {
   adjacent,
@@ -40,7 +40,7 @@ import {
 } from "./types";
 
 export const MARK_NONE = 0;
-export const MARK_TRACK = 1;
+export const MARK_ROAD = 1;
 export const MARK_BLOCKED = 2;
 
 /** One byte per cell, row-major. See the `MARK_*` constants. */
@@ -49,10 +49,10 @@ export type Marks = Uint8Array;
 export const markAt = (marks: Marks, size: number, r: number, c: number): number =>
   marks[r * size + c];
 
-/** Fresh marks for a puzzle: the revealed pieces already count as found track. */
+/** Fresh marks for a puzzle: the revealed pieces already count as found road. */
 export function initialMarks(puzzle: Puzzle): Marks {
   const marks = new Uint8Array(puzzle.size * puzzle.size);
-  for (const { r, c } of puzzle.fixed) marks[r * puzzle.size + c] = MARK_TRACK;
+  for (const { r, c } of puzzle.fixed) marks[r * puzzle.size + c] = MARK_ROAD;
   return marks;
 }
 
@@ -62,19 +62,19 @@ export const withMark = (marks: Marks, size: number, r: number, c: number, m: nu
   return next;
 };
 
-export const isTrackCell = (puzzle: Puzzle, r: number, c: number): boolean =>
+export const isRoadCell = (puzzle: Puzzle, r: number, c: number): boolean =>
   puzzle.solution[r][c] !== 0;
 
-/** Track cells the player has claimed in a row (revealed pieces included). */
+/** Road cells the player has claimed in a row (revealed pieces included). */
 export function rowFound(puzzle: Puzzle, marks: Marks, r: number): number {
   let n = 0;
-  for (let c = 0; c < puzzle.size; c++) if (markAt(marks, puzzle.size, r, c) === MARK_TRACK) n++;
+  for (let c = 0; c < puzzle.size; c++) if (markAt(marks, puzzle.size, r, c) === MARK_ROAD) n++;
   return n;
 }
 
 export function colFound(puzzle: Puzzle, marks: Marks, c: number): number {
   let n = 0;
-  for (let r = 0; r < puzzle.size; r++) if (markAt(marks, puzzle.size, r, c) === MARK_TRACK) n++;
+  for (let r = 0; r < puzzle.size; r++) if (markAt(marks, puzzle.size, r, c) === MARK_ROAD) n++;
   return n;
 }
 
@@ -108,18 +108,30 @@ export function isAutoBlocked(puzzle: Puzzle, marks: Marks, r: number, c: number
   );
 }
 
-/** Total track cells in the solution. */
-export const trackTotal = (puzzle: Puzzle): number => puzzle.path.length;
+/** Total road cells in the solution. */
+export const roadTotal = (puzzle: Puzzle): number => puzzle.path.length;
 
 export function foundTotal(marks: Marks): number {
   let n = 0;
-  for (let i = 0; i < marks.length; i++) if (marks[i] === MARK_TRACK) n++;
+  for (let i = 0; i < marks.length; i++) if (marks[i] === MARK_ROAD) n++;
   return n;
 }
 
-/** True once every track cell has been claimed — time to lay the rails. */
+/**
+ * Squares the player has crossed out by hand. Auto-crosses are derived rather
+ * than stored, so they are deliberately not counted here — this is a tally of
+ * what the *player* did, which is what makes it usable as "a mark just went
+ * down" or "a mark just came back up".
+ */
+export function blockedTotal(marks: Marks): number {
+  let n = 0;
+  for (let i = 0; i < marks.length; i++) if (marks[i] === MARK_BLOCKED) n++;
+  return n;
+}
+
+/** True once every road cell has been claimed — time to lay the road. */
 export const deductionComplete = (puzzle: Puzzle, marks: Marks): boolean =>
-  foundTotal(marks) === trackTotal(puzzle);
+  foundTotal(marks) === roadTotal(puzzle);
 
 // --- Connect phase ---------------------------------------------------------
 
@@ -156,9 +168,9 @@ export function connectStep(
   if (same(head, target)) return null;
   if (!adjacent(head, target)) return null;
   if (route.some((cell) => same(cell, target))) return null;
-  // The exit is where the track leaves the board; nothing follows it.
+  // The exit is where the road leaves the board; nothing follows it.
   if (same(head, { r: exit.r, c: exit.c })) return null;
-  if (markAt(marks, size, target.r, target.c) !== MARK_TRACK) return null;
+  if (markAt(marks, size, target.r, target.c) !== MARK_ROAD) return null;
 
   // The step fixes the head's piece — reject it if the board already shows a
   // different one there.
@@ -171,31 +183,31 @@ export function connectStep(
 }
 
 /**
- * Does a touch here take hold of the rail rather than mark the square?
+ * Does a touch here take hold of the road rather than mark the square?
  *
  * True for any cell the drawn route already runs through — a finger there has
- * hold of the rail, and dragging back winds it in — and, before anything is
- * drawn, for the entry, the only place a rail can begin. Everything else stays a
+ * hold of the road, and dragging back winds it in — and, before anything is
+ * drawn, for the entry, the only place a road can begin. Everything else stays a
  * deduction mark.
  *
- * This is what lets both gestures live on the same grid at the same time: rails
- * are paid out *from the end of the rail*, so no cell ever has to guess which of
+ * This is what lets both gestures live on the same grid at the same time: road
+ * are paid out *from the end of the road*, so no cell ever has to guess which of
  * the two the finger meant. It also leaves un-claiming intact — tapping a
- * claimed cell that isn't on the rail still takes the claim back.
+ * claimed cell that isn't on the road still takes the claim back.
  */
-export function grabsRail(puzzle: Puzzle, route: Coord[], target: Coord): boolean {
+export function grabsRoad(puzzle: Puzzle, route: Coord[], target: Coord): boolean {
   if (route.length === 0) return same(target, { r: puzzle.entry.r, c: puzzle.entry.c });
   return route.some((cell) => same(cell, target));
 }
 
 /**
  * A square nothing is known about yet: no mark of the player's, and not one the
- * clues have already settled. These are the only squares the rail is allowed to
+ * clues have already settled. These are the only squares the road is allowed to
  * be pushed into.
  *
  * The auto-crossed half matters more than it looks. Because every ✓ is true, a
- * line whose count is accounted for genuinely has no track left in it — so an
- * auto-crossed square is *provably* empty, and letting the rail try one would be
+ * line whose count is accounted for genuinely has no road left in it — so an
+ * auto-crossed square is *provably* empty, and letting the road try one would be
  * a trap that always costs a heart.
  */
 export function isUnknown(puzzle: Puzzle, marks: Marks, r: number, c: number): boolean {
@@ -204,34 +216,34 @@ export function isUnknown(puzzle: Puzzle, marks: Marks, r: number, c: number): b
   return markAt(marks, size, r, c) === MARK_NONE && !isAutoBlocked(puzzle, marks, r, c);
 }
 
-/** What the rail's next step towards a dragged-at cell would be. */
-export type RailStep =
+/** What the road's next step towards a dragged-at cell would be. */
+export type PaveStep =
   /** Legal with the board as it stands. */
   | { kind: "move"; route: Coord[] }
-  /** Legal only if this square holds track — pushing here is a claim. */
+  /** Legal only if this square holds road — pushing here is a claim. */
   | { kind: "claim"; cell: Coord };
 
 /**
- * One step of the rail towards `target`, or null if it can't go that way.
+ * One step of the road towards `target`, or null if it can't go that way.
  *
- * A fast drag lands diagonally, so the rail is paid out along an L — one legal
+ * A fast drag lands diagonally, so the road is paid out along an L — one legal
  * step at a time, longer leg first — rather than snapped to wherever the finger
  * landed. Callers loop until this returns null.
  *
  * Two passes, and the order is the point. A step onto a square the player has
  * already claimed is *known* to be safe, so it always wins. Only when there is
- * no such step does the rail push into a square nothing is known about, and that
+ * no such step does the road push into a square nothing is known about, and that
  * push is a **claim**: the same commitment as a double tap, checked the same way
  * and costing a heart when it is wrong. It has to be — a push that were merely
- * refused would turn the drag into a free oracle for "is there track here", and
+ * refused would turn the drag into a free oracle for "is there road here", and
  * the deduction is the game.
  */
-export function railStep(
+export function paveStep(
   puzzle: Puzzle,
   marks: Marks,
   route: Coord[],
   target: Coord,
-): RailStep | null {
+): PaveStep | null {
   const head = route[route.length - 1];
   if (!head || same(head, target)) return null;
 
@@ -254,7 +266,7 @@ export function railStep(
     if (!isUnknown(puzzle, marks, cand.r, cand.c)) continue;
     // Ask the same rules again as if the square were claimed: that way a push
     // the geometry forbids anyway is refused for free, without a heart.
-    const asIf = withMark(marks, puzzle.size, cand.r, cand.c, MARK_TRACK);
+    const asIf = withMark(marks, puzzle.size, cand.r, cand.c, MARK_ROAD);
     if (connectStep(puzzle, asIf, route, cand)) return { kind: "claim", cell: cand };
   }
   return null;
@@ -263,15 +275,15 @@ export function railStep(
 /**
  * The part of a drawn route the marks still back up.
  *
- * Because rails can be laid mid-deduction, a claim can be taken back underneath
- * one that is already drawn. The rail is then cut at that cell and the rest
+ * Because road can be laid mid-deduction, a claim can be taken back underneath
+ * one that is already drawn. The road is then cut at that cell and the rest
  * discarded — which is what the player would do by hand, and keeps the invariant
  * `connectStep` relies on: every cell of the route is claimed.
  */
 export function trimRoute(puzzle: Puzzle, marks: Marks, route: Coord[]): Coord[] {
   for (let i = 0; i < route.length; i++) {
     const { r, c } = route[i];
-    if (markAt(marks, puzzle.size, r, c) !== MARK_TRACK) return route.slice(0, i);
+    if (markAt(marks, puzzle.size, r, c) !== MARK_ROAD) return route.slice(0, i);
   }
   return route;
 }
@@ -285,11 +297,11 @@ export function shownPiece(puzzle: Puzzle, r: number, c: number): Piece | null {
 }
 
 /**
- * True when the drawn route is the finished track: every claimed cell used, and
+ * True when the drawn route is the finished road: every claimed cell used, and
  * it leaves the board through the exit the way the exit piece says it does.
  */
 export function connectComplete(puzzle: Puzzle, route: Coord[]): boolean {
-  if (route.length !== trackTotal(puzzle)) return false;
+  if (route.length !== roadTotal(puzzle)) return false;
   const head = route[route.length - 1];
   const { exit } = puzzle;
   if (!same(head, { r: exit.r, c: exit.c })) return false;
@@ -301,17 +313,17 @@ export function connectComplete(puzzle: Puzzle, route: Coord[]): boolean {
  * The pieces a drawn route puts on the board, keyed by cell.
  *
  * The moving end of the route gets a **stub** — a mask with a single bit, the
- * edge it came in by — which is what makes the rail look like it is being paid
+ * edge it came in by — which is what makes the road look like it is being paid
  * out under the finger rather than snapping between whole pieces.
  *
  * **A printed piece is never redrawn.** The pieces the board gives away at the
- * start are fixed facts, and the rail passing over one must not restate it: a
+ * start are fixed facts, and the road passing over one must not restate it: a
  * stub laid on a printed piece would rub out the shape the player was given and
  * is entitled to keep reading, right at the moment they are using it to work out
  * where the route goes next. Nothing is lost by leaving it — `connectStep`
  * already refuses any step that would disagree with a printed piece, so the mask
- * the route implies there is the printed one anyway once the rail has passed
- * through. Where the rail's end has got to is said by the highlight instead.
+ * the route implies there is the printed one anyway once the road has passed
+ * through. Where the road's end has got to is said by the highlight instead.
  */
 export function routePieces(puzzle: Puzzle, route: Coord[]): Map<number, Piece> {
   const out = new Map<number, Piece>();
@@ -347,7 +359,7 @@ export function nextRouteCell(puzzle: Puzzle, route: Coord[]): Coord | null {
 }
 
 /**
- * A cell worth handing the player during deduction: an unclaimed track cell,
+ * A cell worth handing the player during deduction: an unclaimed road cell,
  * preferring one whose row or column is closest to being settled so the hint
  * lands where the reasoning was going anyway.
  */
@@ -356,8 +368,8 @@ export function hintCell(puzzle: Puzzle, marks: Marks): Coord | null {
   let bestSlack = Infinity;
   for (let r = 0; r < puzzle.size; r++) {
     for (let c = 0; c < puzzle.size; c++) {
-      if (!isTrackCell(puzzle, r, c)) continue;
-      if (markAt(marks, puzzle.size, r, c) === MARK_TRACK) continue;
+      if (!isRoadCell(puzzle, r, c)) continue;
+      if (markAt(marks, puzzle.size, r, c) === MARK_ROAD) continue;
       const slack =
         puzzle.rows[r] - rowFound(puzzle, marks, r) + (puzzle.cols[c] - colFound(puzzle, marks, c));
       if (slack < bestSlack) {

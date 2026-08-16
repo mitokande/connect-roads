@@ -13,8 +13,9 @@ import {
   connectComplete,
   connectStep,
   deductionComplete,
+  blockedTotal,
   foundTotal,
-  grabsRail,
+  grabsRoad,
   hintCell,
   initialMarks,
   isAutoBlocked,
@@ -22,14 +23,14 @@ import {
   lineOverCrossed,
   MARK_BLOCKED,
   MARK_NONE,
-  MARK_TRACK,
+  MARK_ROAD,
   markAt,
   nextRouteCell,
-  railStep,
+  paveStep,
   routePieces,
   shownPiece,
   stubDir,
-  trackTotal,
+  roadTotal,
   trimRoute,
   withMark,
   type Marks,
@@ -131,7 +132,7 @@ function auditPuzzle(p: Puzzle, label: string) {
   check(pieceCells === p.path.length, `${label}: piece grid covers exactly the path`);
   check(
     p.solution[p.entry.r][p.entry.c] !== EMPTY && p.solution[p.exit.r][p.exit.c] !== EMPTY,
-    `${label}: both terminals hold track`,
+    `${label}: both terminals hold road`,
   );
   check(
     !(p.entry.r === p.exit.r && p.entry.c === p.exit.c),
@@ -179,14 +180,23 @@ function auditPlay(p: Puzzle, label: string) {
   check(!deductionComplete(p, marks), `${label}: a fresh board is not already solved`);
 
   for (const cell of p.path) {
-    if (markAt(marks, p.size, cell.r, cell.c) !== MARK_TRACK) {
-      marks = withMark(marks, p.size, cell.r, cell.c, MARK_TRACK);
+    if (markAt(marks, p.size, cell.r, cell.c) !== MARK_ROAD) {
+      marks = withMark(marks, p.size, cell.r, cell.c, MARK_ROAD);
     }
   }
-  check(deductionComplete(p, marks), `${label}: claiming every track cell completes deduction`);
+  check(deductionComplete(p, marks), `${label}: claiming every road cell completes deduction`);
   check(
-    foundTotal(marks) === trackTotal(p),
-    `${label}: claimed count equals the track total`,
+    foundTotal(marks) === roadTotal(p),
+    `${label}: claimed count equals the road total`,
+  );
+
+  // Crosses are counted by hand only: the ones the board derives are not marks,
+  // so the tally the sound layer listens to never moves on its own.
+  check(blockedTotal(marks) === 0, `${label}: a solved deduction has no crosses of its own`);
+  check(
+    blockedTotal(withMark(initialMarks(p), p.size, 0, 0, MARK_BLOCKED)) === 1 &&
+      blockedTotal(initialMarks(p)) === 0,
+    `${label}: crossing one square out counts exactly one`,
   );
 
   // A finished row crosses out its own leftovers.
@@ -203,7 +213,7 @@ function auditPlay(p: Puzzle, label: string) {
 
   // Over-crossing: the solution's own marks never trip the warning, but
   // crossing out a whole row does — including a row whose clue is 0, which has
-  // no track to lose and so must stay quiet.
+  // no road to lose and so must stay quiet.
   for (let r = 0; r < p.size; r++) {
     check(
       !lineOverCrossed(p, marks, r, false),
@@ -211,7 +221,7 @@ function auditPlay(p: Puzzle, label: string) {
     );
     let crossed = initialMarks(p);
     for (let c = 0; c < p.size; c++) {
-      if (markAt(crossed, p.size, r, c) !== MARK_TRACK) {
+      if (markAt(crossed, p.size, r, c) !== MARK_ROAD) {
         crossed = withMark(crossed, p.size, r, c, MARK_BLOCKED);
       }
     }
@@ -222,95 +232,95 @@ function auditPlay(p: Puzzle, label: string) {
     );
   }
 
-  // Hints only ever point at unclaimed track.
+  // Hints only ever point at unclaimed road.
   const partial = initialMarks(p);
   const hint = hintCell(p, partial);
   check(hint !== null, `${label}: an unfinished board offers a hint`);
   if (hint) {
-    check(p.solution[hint.r][hint.c] !== EMPTY, `${label}: the hint cell holds track`);
+    check(p.solution[hint.r][hint.c] !== EMPTY, `${label}: the hint cell holds road`);
     check(
-      markAt(partial, p.size, hint.r, hint.c) !== MARK_TRACK,
+      markAt(partial, p.size, hint.r, hint.c) !== MARK_ROAD,
       `${label}: the hint cell isn't one already claimed`,
     );
   }
   check(hintCell(p, marks) === null, `${label}: a complete board offers no hint`);
 
-  // --- Rail laid before the deduction is finished ---------------------------
-  // Track can be drawn from the first move, so the rules have to hold on a
-  // half-deduced board too: the rail runs as far as the claims do and stops
+  // --- Road laid before the deduction is finished ---------------------------
+  // Road can be drawn from the first move, so the rules have to hold on a
+  // half-deduced board too: the road runs as far as the claims do and stops
   // dead at the first square the player hasn't claimed.
   {
     let early: Marks = initialMarks(p);
     const prefix = Math.min(3, p.path.length - 1);
     for (let i = 0; i < prefix; i++) {
-      early = withMark(early, p.size, p.path[i].r, p.path[i].c, MARK_TRACK);
+      early = withMark(early, p.size, p.path[i].r, p.path[i].c, MARK_ROAD);
     }
-    check(!deductionComplete(p, early), `${label}: the early-rail board is still unfinished`);
+    check(!deductionComplete(p, early), `${label}: the early-road board is still unfinished`);
 
     // How far the solution's own route may legally go with those claims.
     let reach = 0;
     while (
       reach + 1 < p.path.length &&
-      markAt(early, p.size, p.path[reach + 1].r, p.path[reach + 1].c) === MARK_TRACK
+      markAt(early, p.size, p.path[reach + 1].r, p.path[reach + 1].c) === MARK_ROAD
     ) {
       reach++;
     }
 
-    let rail: Coord[] = [];
-    check(grabsRail(p, rail, p.path[0]), `${label}: an unstarted rail is grabbed at the entry`);
-    check(!grabsRail(p, rail, p.path[1]), `${label}: an unstarted rail is grabbed nowhere else`);
+    let road: Coord[] = [];
+    check(grabsRoad(p, road, p.path[0]), `${label}: an unstarted road is grabbed at the entry`);
+    check(!grabsRoad(p, road, p.path[1]), `${label}: an unstarted road is grabbed nowhere else`);
     for (let i = 0; i <= reach; i++) {
-      const next = connectStep(p, early, rail, p.path[i]);
-      check(next !== null, `${label}: rail step ${i} draws mid-deduction`);
+      const next = connectStep(p, early, road, p.path[i]);
+      check(next !== null, `${label}: road step ${i} draws mid-deduction`);
       if (!next) break;
-      rail = next;
+      road = next;
     }
-    check(rail.length === reach + 1, `${label}: the rail reaches every claimed cell`);
-    for (const cell of rail) {
-      check(grabsRail(p, rail, cell), `${label}: every drawn cell takes hold of the rail`);
+    check(road.length === reach + 1, `${label}: the road reaches every claimed cell`);
+    for (const cell of road) {
+      check(grabsRoad(p, road, cell), `${label}: every drawn cell takes hold of the road`);
     }
     if (reach + 1 < p.path.length) {
       const beyond = p.path[reach + 1];
       check(
-        connectStep(p, early, rail, beyond) === null,
-        `${label}: the rail stops at the first unclaimed cell`,
+        connectStep(p, early, road, beyond) === null,
+        `${label}: the road stops at the first unclaimed cell`,
       );
-      check(!grabsRail(p, rail, beyond), `${label}: a cell off the rail doesn't take hold of it`);
+      check(!grabsRoad(p, road, beyond), `${label}: a cell off the road doesn't take hold of it`);
     }
 
-    // Pushing the rail into a square nothing is known about is a claim — and
+    // Pushing the road into a square nothing is known about is a claim — and
     // the rules must offer that push even when the square turns out to be
-    // empty, or the drag would be a free oracle for "is there track here?".
+    // empty, or the drag would be a free oracle for "is there road here?".
     if (reach + 1 < p.path.length) {
       const ahead = p.path[reach + 1];
       if (isUnknown(p, early, ahead.r, ahead.c)) {
-        const step = railStep(p, early, rail, ahead);
+        const step = paveStep(p, early, road, ahead);
         check(
           step !== null && step.kind === "claim" && same(step.cell, ahead),
-          `${label}: pushing on to the next track square is a claim`,
+          `${label}: pushing on to the next road square is a claim`,
         );
-        const claimed = withMark(early, p.size, ahead.r, ahead.c, MARK_TRACK);
-        const after = railStep(p, claimed, rail, ahead);
+        const claimed = withMark(early, p.size, ahead.r, ahead.c, MARK_ROAD);
+        const after = paveStep(p, claimed, road, ahead);
         check(
-          after !== null && after.kind === "move" && after.route.length === rail.length + 1,
+          after !== null && after.kind === "move" && after.route.length === road.length + 1,
           `${label}: once claimed, the same push is an ordinary step`,
         );
-        // Crossed out, the same square refuses the rail for free.
+        // Crossed out, the same square refuses the road for free.
         const crossed = withMark(early, p.size, ahead.r, ahead.c, MARK_BLOCKED);
-        const refused = railStep(p, crossed, rail, ahead);
+        const refused = paveStep(p, crossed, road, ahead);
         check(
           refused === null || refused.kind !== "claim",
-          `${label}: the rail won't push into a square ruled out`,
+          `${label}: the road won't push into a square ruled out`,
         );
       }
       for (const d of DIRS) {
-        const head = rail[rail.length - 1];
+        const head = road[road.length - 1];
         const cand = { r: head.r + DR[d], c: head.c + DC[d] };
         if (!isUnknown(p, early, cand.r, cand.c)) continue;
-        if (!connectStep(p, withMark(early, p.size, cand.r, cand.c, MARK_TRACK), rail, cand)) {
+        if (!connectStep(p, withMark(early, p.size, cand.r, cand.c, MARK_ROAD), road, cand)) {
           continue;
         }
-        const step = railStep(p, early, rail, cand);
+        const step = paveStep(p, early, road, cand);
         check(
           step !== null && step.kind === "claim" && same(step.cell, cand),
           `${label}: every legal push into the unknown is offered as a claim`,
@@ -319,21 +329,21 @@ function auditPlay(p: Puzzle, label: string) {
       }
     }
 
-    // Un-claiming underneath a drawn rail cuts it there — and takes the rest.
-    check(trimRoute(p, early, rail) === rail, `${label}: a backed-up rail is left alone`);
-    if (rail.length > 1) {
-      const end = rail[rail.length - 1];
+    // Un-claiming underneath a drawn road cuts it there — and takes the rest.
+    check(trimRoute(p, early, road) === road, `${label}: a backed-up road is left alone`);
+    if (road.length > 1) {
+      const end = road[road.length - 1];
       check(
-        trimRoute(p, withMark(early, p.size, end.r, end.c, MARK_NONE), rail).length ===
-          rail.length - 1,
-        `${label}: un-claiming the rail's end cuts it back one`,
+        trimRoute(p, withMark(early, p.size, end.r, end.c, MARK_NONE), road).length ===
+          road.length - 1,
+        `${label}: un-claiming the road's end cuts it back one`,
       );
     }
-    if (rail.length > 2) {
-      const mid = rail[1];
+    if (road.length > 2) {
+      const mid = road[1];
       check(
-        trimRoute(p, withMark(early, p.size, mid.r, mid.c, MARK_NONE), rail).length === 1,
-        `${label}: un-claiming mid-rail drops everything past it`,
+        trimRoute(p, withMark(early, p.size, mid.r, mid.c, MARK_NONE), road).length === 1,
+        `${label}: un-claiming mid-road drops everything past it`,
       );
     }
   }
@@ -349,7 +359,7 @@ function auditPlay(p: Puzzle, label: string) {
     // settled by the clues — so from here no drag can cost a heart.
     const tip = route[route.length - 1];
     for (const d of DIRS) {
-      const step = railStep(p, marks, route, { r: tip.r + DR[d], c: tip.c + DC[d] });
+      const step = paveStep(p, marks, route, { r: tip.r + DR[d], c: tip.c + DC[d] });
       check(
         step === null || step.kind === "move",
         `${label}: a settled board's drag never asks for a claim`,
@@ -363,13 +373,13 @@ function auditPlay(p: Puzzle, label: string) {
       if (printed === null) {
         check(stubDir(drawn) !== null, `${label}: the moving end draws a stub`);
       } else {
-        // A piece the board printed is immutable: the rail resting on it draws
+        // A piece the board printed is immutable: the road resting on it draws
         // it whole rather than cutting it back to the edge it came in by.
         check(drawn === printed, `${label}: the moving end leaves a printed piece alone`);
       }
     }
     // …and that holds for every printed piece at every point in the drawing,
-    // not just the one under the rail's end.
+    // not just the one under the road's end.
     for (const f of p.fixed) {
       const shown = pieces.get(key(f.r, f.c));
       check(
@@ -378,7 +388,7 @@ function auditPlay(p: Puzzle, label: string) {
       );
     }
   }
-  check(connectComplete(p, route), `${label}: the solution's route completes the track`);
+  check(connectComplete(p, route), `${label}: the solution's route completes the road`);
   check(
     routePieces(p, route).size === p.path.length,
     `${label}: the finished route draws every cell`,
@@ -409,7 +419,7 @@ function auditPlay(p: Puzzle, label: string) {
   const back = half[half.length - 2];
   check(
     connectStep(p, unclaimed, half.slice(0, -1), head) === null,
-    `${label}: an unclaimed cell refuses the rail`,
+    `${label}: an unclaimed cell refuses the road`,
   );
   check(back !== undefined, `${label}: sanity — the route has a previous cell`);
 
@@ -423,7 +433,7 @@ function auditPlay(p: Puzzle, label: string) {
   check(nextRouteCell(p, p.path) === null, `${label}: a finished route has no next cell`);
 }
 
-console.log("Connect Tracks — core tests\n");
+console.log("Connect Roads — core tests\n");
 
 // --- 1. Determinism ---------------------------------------------------------
 {
@@ -572,7 +582,7 @@ console.log("Connect Tracks — core tests\n");
 
 // The drag has to be able to be wrong: if no board ever offered a push into a
 // square that turned out to be empty, the gesture would be telling the player
-// where the track is instead of asking them.
+// where the road is instead of asking them.
 check(wrongPushes > 0, `some pushes into the unknown are wrong (got ${wrongPushes})`);
 
 console.log(

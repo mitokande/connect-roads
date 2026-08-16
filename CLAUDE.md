@@ -1,21 +1,21 @@
-# CLAUDE.md — Connect Tracks
+# CLAUDE.md — Connect Roads
 
-Project context for Claude Code. Connect Tracks is a **Train Tracks** puzzle
+Project context for Claude Code. Connect Roads is a **Train Tracks** puzzle
 (the newspaper logic puzzle, sometimes called Railroad Tracks) built with Expo
 SDK 54 and React Native.
 
 ## What the game is
 
-An _n×n_ grid. A single unbroken railway enters at one border **terminal** and
+An _n×n_ grid. A single unbroken road enters at one border **terminal** and
 leaves at another, never branching and never re-using a square. Each row and
-column carries a **count** — how many of its squares hold track, not which. Two
+column carries a **count** — how many of its squares hold road, not which. Two
 pieces are printed on the board from the start (the two terminals), plus one or
 two more when the generator needs them to force a unique answer.
 
 Every shipped board has exactly **one** solution, and `npm test` re-proves that
 for all 120 of them from the clues alone.
 
-A track piece joins exactly two of a square's four edges, so there are six of
+A road piece joins exactly two of a square's four edges, so there are six of
 them: two straights and four curves. Internally a piece is just a **2-bit mask**
 of the directions it opens onto (`src/game/types.ts`), which makes "do these two
 pieces meet" a bitwise test and makes the four half-laid **stubs** (single-bit
@@ -23,70 +23,70 @@ masks) fall out of the same representation for free.
 
 ## The two phases — this is the whole design
 
-**Deduce.** Work out *which* squares carry track. Double tap claims a square
-("track goes here"); a single tap or a swipe crosses one out. You never say what
+**Deduce.** Work out *which* squares carry road. Double tap claims a square
+("road goes here"); a single tap or a swipe crosses one out. You never say what
 *shape* the piece is — that isn't knowable yet, and the board draws a claimed
-square as four rail ends pointing inward around a `?`.
+square as four road ends pointing inward around a `?`.
 
 **Connect.** The route's shape is still unknown, and the player drags from the
-entry terminal through the claimed squares to lay the actual rails. The finished
-route drives a train.
+entry terminal through the claimed squares to lay the actual road. The finished
+route drives a car.
 
 Splitting the solve in two is what makes this a *touch* game rather than a
 newspaper puzzle with buttons: one half is tapping (deduction), the other is one
 continuous gesture (the payoff). `deductionComplete` flips the phase and
 `connectComplete` ends the board.
 
-**The two overlap.** Rail can be laid from the first move, not only once every
+**The two overlap.** Road can be laid from the first move, not only once every
 square has been claimed — a half-deduced board usually has an obvious stretch of
-rail in it already, and making the player hold that in their head until the end
-is busywork. The phase flip therefore marks when the *last* rail becomes
+road in it already, and making the player hold that in their head until the end
+is busywork. The phase flip therefore marks when the *last* road becomes
 drawable, not the first.
 
-**Pushing the rail into an unknown square claims it** (`railStep` returns
-`{kind: "claim"}` and the `RAIL` action commits it). That is the second half
-folded into the first: the same finger that lays track also states where track
+**Pushing the road into an unknown square claims it** (`paveStep` returns
+`{kind: "claim"}` and the `PAVE` action commits it). That is the second half
+folded into the first: the same finger that lays road also states where road
 goes, so an obvious run can be drawn in one motion instead of double-tapping
 four squares and then tracing them. It costs exactly what a double tap costs —
 `refuse` is shared — and it has to, because a push that were merely *refused*
-would be a free oracle for "is there track here", and the deduction is the game.
+would be a free oracle for "is there road here", and the deduction is the game.
 
-Two squares the rail will not push into, both free of charge: ones the player
+Two squares the road will not push into, both free of charge: ones the player
 crossed out (their note, respected) and ones the clues have already settled
 (`isUnknown`). The second is the important one — since every ✓ is true, a
-settled line genuinely has no track left in it, so an auto-crossed square is
+settled line genuinely has no road left in it, so an auto-crossed square is
 *provably* empty and a push there would be a trap that always costs a heart.
 
 Both gestures live on the same grid at the same time, so a touch has to belong
-to one of them. `grabsRail` decides: a touch on the drawn rail — or on the entry,
-before there is one — pays out track, and everything else marks a square. Since
-a rail is only ever extended from its own end, no square is ever ambiguous. The
-side effect is that a claim under the rail can't be un-claimed while the rail is
-standing on it; drag the rail back off it first.
+to one of them. `grabsRoad` decides: a touch on the drawn road — or on the entry,
+before there is one — pays out road, and everything else marks a square. Since
+a road is only ever extended from its own end, no square is ever ambiguous. The
+side effect is that a claim under the road can't be un-claimed while the road is
+standing on it; drag the road back off it first.
 
 **A printed piece is immutable.** The two terminals and the uniqueness reveals
-are facts the board hands over at the start, and the rail passing over one must
+are facts the board hands over at the start, and the road passing over one must
 not restate it — a stub laid on a printed piece rubs out a shape the player is
 mid-way through reasoning from. `routePieces` therefore yields the printed piece
 for those cells whatever the route is doing, including under the moving end.
 Nothing is lost: `connectStep` already refuses any step that disagrees with a
 printed piece, so the mask the route implies there is the printed one anyway.
-Where the rail's end has got to is said by the highlight instead.
+Where the road's end has got to is said by the highlight instead.
 
-**Only a drag winds the rail in.** Putting a finger down on a drawn cell takes
-hold of the rail without moving it — the rewind happens as the finger drags back
-along it, so while the touch is down the rail's end simply follows the finger.
-Rewinding on the touch itself meant that a mis-tap on the rail silently swallowed
-everything drawn past it, and rail cells are exactly the cells a player has most
+**Only a drag winds the road in.** Putting a finger down on a drawn cell takes
+hold of the road without moving it — the rewind happens as the finger drags back
+along it, so while the touch is down the road's end simply follows the finger.
+Rewinding on the touch itself meant that a mis-tap on the road silently swallowed
+everything drawn past it, and road cells are exactly the cells a player has most
 reason to prod at.
 
 Finishing the route implies the deduction is finished, so nothing extra polices
 the win: a complete route is `path.length` distinct *claimed* cells, and claims
-are true, so every track square must have been found to draw it.
+are true, so every road square must have been found to draw it.
 
 ### A claim is checked; a cross is not
 
-Double-tapping a square with no track is **refused and costs a heart** — the
+Double-tapping a square with no road is **refused and costs a heart** — the
 square is crossed out instead (it *is* now known to be empty, and charging a
 heart for nothing would be worse than the mistake; it also can't be re-claimed
 for a second heart). Crossing out is **free and never checked**: it is
@@ -95,9 +95,9 @@ first thing the tutorial teaches — charging for it would make the core move fe
 like a gamble.
 
 The consequence worth protecting: because claims are verified, **a ✓ on the
-board is always true**, so the rail can trust the claimed set completely and
+board is always true**, so the road can trust the claimed set completely and
 `connectStep` only has to police adjacency and the printed pieces. That is also
-what makes drawing rail mid-deduction sound rather than a way to cheat.
+what makes drawing road mid-deduction sound rather than a way to cheat.
 
 Three hearts. Losing the last one sets `failed`, which locks input and shows the
 solution *dimmed underneath the player's own marks* (`ghosts` in `useGame`)
@@ -132,9 +132,14 @@ src/game/                   pure, headless, no React — the whole rulebook
   board.ts                  rules of play (marks, auto-crosses, route legality)
   runTests.ts               npm test
 src/state/useGame.ts        board reducer + AsyncStorage progress
-src/components/             Board, Cell, TrackPiece, TrainRide, screens, overlays
+src/state/useGameSounds.ts  what the board sounds like, derived from what changed
+src/components/             Board, Cell, RoadPiece, CarRide, screens, overlays
+src/haptics.ts              vibration, one switch
+src/sound.ts                sound effects, one switch
 src/theme.ts                palette; colour is assigned by function
+assets/sfx/                 GENERATED — the baked sounds
 scripts/buildLevels.ts      npm run levels:build
+scripts/buildSounds.ts      npm run sfx:build
 ```
 
 `src/game` never imports React. That is what lets `runTests.ts` play thousands
@@ -191,24 +196,48 @@ generator.
 
 ## Rendering
 
-`TrackPiece.tsx` derives all ten drawings (6 pieces + 4 stubs) from one geometry:
+`RoadPiece.tsx` derives all ten drawings (6 pieces + 4 stubs) from one geometry:
 a curve is a quarter circle centred on the corner with **radius half a cell**, so
 its ends land exactly on the edge midpoints and therefore exactly on the
-neighbouring piece's ends. Rails are the centreline offset by ±`RAIL_GAP`, which
-on a curve means two concentric arcs — outer longer than inner, as real track is.
-The SVG sweep flag is the sign of a cross product, not a lookup table. Sleepers
-go under the rails, perpendicular to travel: rotated to the polar angle on a
-curve, axis-aligned on a straight.
+neighbouring piece's ends. Everything else is that centreline offset sideways —
+the grass verges at ±`VERGE_OFF`, the dark kerb as a wider stroke under the
+tarmac, the dashes as the centreline itself. On a curve an offset is a concentric
+arc (wider outside the bend, tighter inside) whose ends **slide along their edge**
+by `k = 1 − 2r/s`, which is what makes two neighbouring pieces meet
+tarmac-to-tarmac and grass-to-grass with no seam. The SVG sweep flag is the sign
+of a cross product, not a lookup table. Caps are butt, never round: a rounded end
+bulges past the cell edge and prints a lip where two pieces meet.
 
-`TrainRide.tsx` flattens the finished route into a polyline (curves sampled
-around their arc), measures it, and uses **cumulative distance** as the
-interpolation input — constant speed through corners, which is the thing the eye
-notices. Carriages are the same interpolation with the input range slid forward
-by a fixed *distance*, so the train bends through a curve together instead of
-concertina-ing. Headings are unwrapped so a crossing of ±180° never spins the
-long way round. Both terminals are extended off the board so the train arrives
-out of one tunnel mouth and leaves by the other; the grid's clipping does the
-rest. Everything is native-driver (translate and rotate only).
+Bushes are planted on the verges only above `BUSH_MIN_PX`. On an 8×8 the cells
+are small enough that shrubbery turns into smudges, and the road is the thing the
+player is trying to read.
+
+`CarRide.tsx` flattens the finished route into a polyline (curves sampled around
+their arc), measures it, and uses **cumulative distance** as the interpolation
+input — constant speed through corners, which is the thing the eye notices.
+Headings are unwrapped so a crossing of ±180° never spins the long way round.
+Both ends are extended off the board so the cars arrive from off-screen and leave
+the same way; the grid's clipping does the rest. Everything is native-driver
+(translate and rotate only).
+
+**Five cars, not one.** The four behind the leader are that same interpolation
+with the input range slid forward by a fixed *distance*, so they trail by a
+constant gap rather than a constant time and the convoy bends through a corner in
+file instead of concertina-ing. The drive runs past 1 to `end = 1 + gap·(CARS−1)`
+so the last car reaches the end of the line; the ones already finished clamp at
+the departure point, which is off the board and clipped away. The duration is
+scaled by `end` too — the extra stretch is time the tail spends leaving, not the
+leader driving faster to cover it. They are painted from `theme.fleet`: five of
+one colour reads as a copy-paste, five colours read as traffic.
+
+The two ends say what they are with no instruction: a **start line** painted
+across the tarmac where the road enters, and the **chequered flag** on the square
+where it leaves. The start line was a parked car first, and the car was wrong —
+it covered the printed piece underneath, which is one of the few facts the board
+gives away and the last thing worth burying. A line is flat: same statement, road
+still readable. It is inset from the border because the terminal tab sits on that
+edge, it takes its width from `ROAD_W` so it can't drift from the lane it is
+painted on, and it goes once the car is away — there is nothing left to start.
 
 ## Input
 
@@ -219,10 +248,10 @@ so the container always owns the touch. The grant records the grid's page-space
 origin as `pageX − locationX`, so later move events resolve to a cell with no
 `measure` call and no dependence on where the board sits on screen.
 
-Because rail and marks share the grid throughout, the grant routes the touch
-before it does anything with it: `grabsRail` first (rail gesture), deduction
+Because road and marks share the grid throughout, the grant routes the touch
+before it does anything with it: `grabsRoad` first (road gesture), deduction
 otherwise. The entry cell is lit from the first frame — the glow means "the next
-rail goes here" everywhere else in the game, and here it is also the only
+road goes here" everywhere else in the game, and here it is also the only
 advertisement that the drag is available yet.
 
 **Double tap is optimistic**: the first tap applies its cross immediately and
@@ -230,19 +259,66 @@ the second *replaces* it with a claim. Waiting out the double-tap window before
 drawing anything would put ~250ms of lag on the most repeated action in the game;
 taking a cross back is invisible by comparison.
 
-**A fast drag lands diagonally**, so `railStep` pays the route out one legal
+**A fast drag lands diagonally**, so `paveStep` pays the route out one legal
 step at a time along an L. Every step still goes through `connectStep`, so
 nothing illegal can be drawn however fast the finger moves.
 
-That walk lives in the reducer (the `RAIL` action) rather than in the responder,
+That walk lives in the reducer (the `PAVE` action) rather than in the responder,
 because a step may now *claim* — and a claim reads the solution and spends a
 heart, which is state the component has no business deciding. The responder says
-only "the finger is over this cell"; the reducer decides how far the rail gets
-and what it costs. A push that costs a heart also ends the stroke: the rail can
+only "the finger is over this cell"; the reducer decides how far the road gets
+and what it costs. A push that costs a heart also ends the stroke: the road can
 claim as it goes, and one careless flick should not be able to spend all three.
 
 Props reach the responder through a `live` ref refreshed each render — the
 responder is created once and would otherwise capture the first render's props.
+
+## Sound
+
+**The sounds are generated, not sourced.** `npm run sfx:build` synthesises all
+seventeen from `scripts/buildSounds.ts` — oscillators, seeded noise, one-pole
+filters and envelopes over a Float32 buffer — and writes 16-bit mono WAVs into
+`assets/sfx/`. A game this quiet needs a handful of very specific noises, and the
+useful ones are easier to describe as a recipe than to find: twenty lines give
+exactly the 46ms tick the board wants, weigh 4kB, are byte-identical on every
+machine, and carry no licence. Same bargain as the level bank — the script is the
+source, the files are its baked output, and a rebuild never shows up as a diff.
+
+One instrument family: a short filtered-noise transient with a pitched body under
+it, nothing brighter than about 6kHz, nothing that rings. Levels are set per
+sound in the script rather than left to normalisation, because the difference
+between a noise you can hear a thousand times and one you mute is mostly
+loudness — and an undo is always quieter than the act it undoes.
+
+**The hot sounds come in threes.** `cross` and `pave` are heard thousands of
+times, several a second inside one stroke, and the ear picks an identical sample
+repeated at speed and starts hearing a machine gun. Three near-identical takes
+rotate; as a bonus each play gets its own player, so consecutive ones overlap
+properly. A floor of 28ms between plays stops a fast sweep rattling.
+
+**What makes a noise is decided by the state, not the call site**
+(`useGameSounds`). A claim can arrive from a double tap, from the hint button, or
+from a drag that paved into an unknown square; a mark can be taken back three
+ways. Watching `foundTotal`/`blockedTotal`/`route.length`/`shake` instead means
+every route to an outcome makes the right noise exactly once, and a new route
+gets its sound for free. Several things can move in one reducer pass — a push
+into the unknown claims a square *and* extends the road — so the rules are ranked
+and one wins. `fail` outranks `wrong` because losing the last heart bumps the
+shake too, and the refusal is no longer the news.
+
+Two things that only bite off the web build, both worth keeping:
+
+- **A finished player is parked at the end of its clip.** Only the web's
+  `<audio>` rewinds itself; on iOS and Android, playing again from there is
+  silence. So a used voice is rewound in the background once its clip is over and
+  the next play finds it ready — and a voice retriggered *before* it finished has
+  to chain `seekTo(0).then(play)`, never fire them side by side, because `seekTo`
+  returns a promise and `play` does not.
+- **The `expo-audio` config plugin asks for the microphone by default.** Left as
+  the bare string `"expo-audio"`, a prebuild puts `RECORD_AUDIO` in the Android
+  manifest and `NSMicrophoneUsageDescription` in Info.plist — for a game that
+  only plays 400ms blips. `app.json` passes `microphonePermission: false` and
+  `recordAudioAndroid: false` to turn both off.
 
 ## The ladder
 
@@ -254,7 +330,7 @@ A level is nothing but a number: its size and seed both derive from it, so
 progress persists as a single integer. Clearing the newest level unlocks the
 next and pays one hint (capped at 9, starting stock 5). Replaying pays nothing.
 
-Hints spend from persisted stock: during deduction one claims a track square
+Hints spend from persisted stock: during deduction one claims a road square
 (preferring the line closest to settled, so it lands where the reasoning was
 going); during connect it extends the route by one correct step.
 

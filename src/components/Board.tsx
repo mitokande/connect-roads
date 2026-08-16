@@ -9,11 +9,11 @@
 // the grid (page minus location) so later move events can be resolved to a cell
 // without measuring anything.
 //
-// The rail gesture and the deduction gestures share the grid for the whole
-// board rather than taking turns: a touch landing on the drawn rail — or on the
-// entry, before there is one — pays out track, and every other touch marks a
-// square. Since a rail can only be extended from its own end, no square is ever
-// ambiguous, which is what lets the player lay track as soon as they can see it
+// The road gesture and the deduction gestures share the grid for the whole
+// board rather than taking turns: a touch landing on the drawn road — or on the
+// entry, before there is one — pays out road, and every other touch marks a
+// square. Since a road can only be extended from its own end, no square is ever
+// ambiguous, which is what lets the player lay road as soon as they can see it
 // instead of holding it in their head until the deduction is finished.
 //
 // Double tap is handled optimistically: the first tap applies its ✕ immediately
@@ -23,16 +23,16 @@
 
 import React, { useMemo, useRef } from "react";
 import { PanResponder, StyleSheet, Text, View, type ViewStyle } from "react-native";
-import Svg, { Polygon } from "react-native-svg";
+import Svg, { Polygon, Rect } from "react-native-svg";
 
 import {
   connectStep,
-  grabsRail,
+  grabsRoad,
   isAutoBlocked,
   lineOverCrossed,
   MARK_BLOCKED,
   MARK_NONE,
-  MARK_TRACK,
+  MARK_ROAD,
   markAt,
   rowFound,
   colFound,
@@ -42,8 +42,9 @@ import {
 } from "../game/board";
 import { key, same, type Coord, type Dir, type Piece, type Puzzle } from "../game/types";
 import { radius, theme } from "../theme";
+import { CarRide } from "./CarRide";
 import { Cell } from "./Cell";
-import { TrainRide } from "./TrainRide";
+import { ROAD_W } from "./RoadPiece";
 
 const DOUBLE_TAP_MS = 280;
 
@@ -53,7 +54,7 @@ const DOUBLE_TAP_MS = 280;
  * Left selectable, a stroke across the grid selects the clue digits, and the
  * *next* press inside that selection is read by the browser as the start of a
  * native drag-and-drop: `dragstart` fires, the pointer stream is cancelled, and
- * the responder is terminated mid-gesture, so the rail silently stops following
+ * the responder is terminated mid-gesture, so the road silently stops following
  * the finger. Phones never see it; the web build did.
  *
  * The cast is because React Native's `ViewStyle` doesn't carry `userSelect` —
@@ -78,8 +79,8 @@ export type BoardProps = {
   onClaim: (cell: Coord) => void;
   onPaint: (cell: Coord, value: number) => void;
   onRoute: (route: Coord[]) => void;
-  /** Pay the rail out towards this cell — it may claim squares on the way. */
-  onRail: (target: Coord) => void;
+  /** Pay the road out towards this cell — it may claim squares on the way. */
+  onPave: (target: Coord) => void;
   riding?: boolean;
   onRideDone?: () => void;
 };
@@ -130,16 +131,16 @@ export function Board(props: BoardProps) {
           if (!at) return;
           const { puzzle: p, marks: m, route: rt, phase: ph } = live.current;
 
-          // Rail first, and at any point in the board — a touch on the drawn
-          // rail (or on the entry, before there is one) pays track out under the
+          // Road first, and at any point in the board — a touch on the drawn
+          // road (or on the entry, before there is one) pays road out under the
           // finger whether or not the deduction is finished. Once it *is*
           // finished there are no marks left to make, so any touch may extend
-          // the rail; before that only a touch on the rail itself does, which is
+          // the road; before that only a touch on the road itself does, which is
           // what keeps the two gestures from fighting over the same square.
-          if (ph === "connect" || (ph === "deduce" && grabsRail(p, rt, at))) {
+          if (ph === "connect" || (ph === "deduce" && grabsRoad(p, rt, at))) {
             g.mode = "route";
-            // Taking hold of the rail is not itself a move: putting a finger
-            // down on a drawn cell leaves the rail exactly where it is, and
+            // Taking hold of the road is not itself a move: putting a finger
+            // down on a drawn cell leaves the road exactly where it is, and
             // only dragging back off it rubs anything out. A touch anywhere
             // else takes the step if it's a legal one.
             if (!rt.some((c) => same(c, at))) {
@@ -184,7 +185,7 @@ export function Board(props: BoardProps) {
           if (g.mode === "paint" && g.paintTo !== null) {
             live.current.onPaint(at, g.paintTo);
           } else if (g.mode === "route") {
-            // A push that cost a heart ends the stroke. The rail can claim as it
+            // A push that cost a heart ends the stroke. The road can claim as it
             // goes, and one careless flick shouldn't be able to spend all three
             // — being made to lift the finger is the pause that costs nothing
             // and stops a mistake from compounding.
@@ -193,16 +194,16 @@ export function Board(props: BoardProps) {
               g.mode = "none";
               return;
             }
-            // While the finger is down the rail's end follows it: dragging back
-            // onto a cell the rail already runs through winds it back to there,
-            // and anything else pays more track out.
+            // While the finger is down the road's end follows it: dragging back
+            // onto a cell the road already runs through winds it back to there,
+            // and anything else pays more road out.
             const idx = live.current.route.findIndex((c) => same(c, at));
             if (idx >= 0) {
               if (idx < live.current.route.length - 1) {
                 live.current.onRoute(live.current.route.slice(0, idx + 1));
               }
             } else {
-              live.current.onRail(at);
+              live.current.onPave(at);
             }
           }
         },
@@ -221,9 +222,9 @@ export function Board(props: BoardProps) {
 
   // --- what to draw ---------------------------------------------------------
   const drawn = useMemo(() => routePieces(puzzle, route), [puzzle, route]);
-  // The lit cell is where the next rail goes: the moving end of the drawn route,
-  // or — before there is one — the entry, the only place a rail may start. It is
-  // lit from the first moment of the board, because that is when laying rail
+  // The lit cell is where the next road goes: the moving end of the drawn route,
+  // or — before there is one — the entry, the only place a road may start. It is
+  // lit from the first moment of the board, because that is when laying road
   // becomes possible; nothing is lit once the board is won and there is no next
   // step to point at.
   const head =
@@ -241,8 +242,8 @@ export function Board(props: BoardProps) {
       const laid = drawn.get(k) ?? null;
       const ghost = ghosts?.get(k) ?? null;
       const mark = markAt(marks, n, r, c);
-      // The printed clue outranks everything: it is the same piece the rail
-      // would draw anyway, and it stays whole while the rail's end rests on it.
+      // The printed clue outranks everything: it is the same piece the road
+      // would draw anyway, and it stays whole while the road's end rests on it.
       const piece = fixedPiece !== null ? fixedPiece : laid !== null ? laid : ghost;
       cells.push(
         <Cell
@@ -252,7 +253,7 @@ export function Board(props: BoardProps) {
           c={c}
           piece={piece}
           ghost={piece !== null && laid === null && fixedPiece === null}
-          claimed={piece === null && mark === MARK_TRACK}
+          claimed={piece === null && mark === MARK_ROAD}
           blocked={mark === MARK_BLOCKED}
           auto={mark === MARK_NONE && isAutoBlocked(puzzle, marks, r, c)}
           glow={(head !== null && head.r === r && head.c === c) || (!!hint && hint.r === r && hint.c === c)}
@@ -306,9 +307,12 @@ export function Board(props: BoardProps) {
             {cells}
             <Terminal t={puzzle.entry} cell={cell} n={n} inward />
             <Terminal t={puzzle.exit} cell={cell} n={n} />
-            {riding ? (
-              <TrainRide puzzle={puzzle} cell={cell} onDone={onRideDone} />
-            ) : null}
+            {/* The start line goes once the car is away — there is nothing left
+                to start. The finish flag stays put, so both ends say what they
+                are with no instruction. */}
+            {riding || phase === "won" ? null : <StartLine t={puzzle.entry} cell={cell} />}
+            <FinishFlag t={puzzle.exit} cell={cell} />
+            {riding ? <CarRide puzzle={puzzle} cell={cell} onDone={onRideDone} /> : null}
           </View>
         </View>
       </View>
@@ -354,12 +358,12 @@ function Clue({
 }
 
 /**
- * The dark gate on the border where the track enters or leaves.
+ * The dark gate on the border where the road enters or leaves.
  *
  * Kept deliberately thin: it sits *over* the cell, and a chunky one buries the
  * piece underneath it — which is the piece the player most needs to read, since
  * it is one of the two the board gives away. The chevron points the way the
- * train travels (in at the entry, out at the exit) rather than simply off the
+ * car travels (in at the entry, out at the exit) rather than simply off the
  * board, so the pair also answers "which end do I drag from".
  */
 function Terminal({
@@ -408,6 +412,87 @@ function Terminal({
     <View pointerEvents="none" style={[styles.terminal, box, { borderRadius: thick * 0.5 }]}>
       <Svg width={horizontal ? h : a} height={horizontal ? a : h}>
         <Polygon points={pts} fill="#9DB3C9" />
+      </Svg>
+    </View>
+  );
+}
+
+/**
+ * The start line, painted across the tarmac where the road enters the board.
+ *
+ * A whole car parked here said "you start from this square" but *covered* the
+ * printed piece while saying it — and that piece is one of the few facts the
+ * board gives away, so it is the last thing worth burying. A line painted on the
+ * road is flat: it sits inside the lane, states the same thing, and leaves the
+ * shape underneath entirely readable. It also rhymes with the chequered flag at
+ * the other end, so the two squares read as a pair.
+ *
+ * It is inset from the border rather than flush with it because the terminal tab
+ * sits on that edge and would cover a line drawn under it.
+ */
+function StartLine({ t, cell }: { t: { r: number; c: number; dir: Dir }; cell: number }) {
+  const across = ROAD_W * cell;
+  const thick = Math.max(4, cell * 0.1);
+  const inset = Math.max(8, cell * 0.15);
+  const horizontal = t.dir === 1 || t.dir === 3;
+  const w = horizontal ? thick : across;
+  const h = horizontal ? across : thick;
+  // Hard against the edge the road comes in by, one tab's width in.
+  const left =
+    t.c * cell + (t.dir === 3 ? inset : t.dir === 1 ? cell - inset - thick : (cell - w) / 2);
+  const top =
+    t.r * cell + (t.dir === 0 ? inset : t.dir === 2 ? cell - inset - thick : (cell - h) / 2);
+
+  return (
+    <View pointerEvents="none" style={{ position: "absolute", left, top }}>
+      <Svg width={w} height={h}>
+        {/* Solid, and across the lane rather than along it — the dashes already
+            run the other way, so nothing else on the road looks like this. */}
+        <Rect
+          x={0}
+          y={0}
+          width={w}
+          height={h}
+          rx={Math.min(w, h) * 0.3}
+          fill={theme.roadLine}
+        />
+      </Svg>
+    </View>
+  );
+}
+
+/** The chequered flag on the finish square. */
+function FinishFlag({ t, cell }: { t: { r: number; c: number }; cell: number }) {
+  const s = cell * 0.46;
+  const pole = Math.max(1.5, s * 0.09);
+  const sq = s / 4;
+  const squares: React.ReactNode[] = [];
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      squares.push(
+        <Rect
+          key={`${r}${c}`}
+          x={pole + c * sq}
+          y={r * sq}
+          width={sq}
+          height={sq}
+          fill={(r + c) % 2 === 0 ? "#FFFFFF" : theme.frame}
+        />,
+      );
+    }
+  }
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        position: "absolute",
+        left: t.c * cell + (cell - s) / 2,
+        top: t.r * cell + (cell - s) / 2,
+      }}
+    >
+      <Svg width={s} height={s}>
+        <Rect x={0} y={0} width={pole} height={s} rx={pole / 2} fill={theme.frame} />
+        {squares}
       </Svg>
     </View>
   );

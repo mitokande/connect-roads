@@ -8,6 +8,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 
+import { sound } from "../sound";
 import { radius, shadow, theme } from "../theme";
 
 type Step = {
@@ -20,21 +21,21 @@ const STEPS: Step[] = [
   {
     text: (
       <>
-        Join all the track into <B>one route</B>, from the entry arrow to the exit arrow.
+        Join all the road into <B>one route</B>, from the start line to the finish flag.
       </>
     ),
   },
   {
     text: (
       <>
-        The numbers count how many squares of that <B>row or column</B> hold track.
+        The numbers count how many squares of that <B>row or column</B> hold road.
       </>
     ),
   },
   {
     text: (
       <>
-        A square that a rail already points into must hold track. <B>Double tap</B> one to claim it.
+        A square a road already points into must hold road. <B>Double tap</B> one to claim it.
       </>
     ),
     awaits: "claim",
@@ -49,7 +50,7 @@ const STEPS: Step[] = [
   {
     text: (
       <>
-        You can <B>drag</B> out from the entry at any time. Push the rail into a square you
+        You can <B>drag</B> out from the entry at any time. Push the road into a square you
         haven't claimed and it claims it — so a wrong push costs a heart, just like a double tap.
       </>
     ),
@@ -57,7 +58,7 @@ const STEPS: Step[] = [
   {
     text: (
       <>
-        Every square found. Now <B>drag</B> from the entry through them to lay the rails.
+        Every square found. Now <B>drag</B> from the entry through them to lay the road.
       </>
     ),
     awaits: "connect",
@@ -104,13 +105,23 @@ export function TutorialCoach({
     <Animated.View style={[styles.card, { opacity: fade }]}>
       <Text style={styles.text}>{current.text}</Text>
       {waiting ? (
-        <Pressable onPress={onDone} hitSlop={8}>
+        <Pressable
+          onPress={() => {
+            sound.press();
+            onDone();
+          }}
+          hitSlop={8}
+        >
           <Text style={styles.skip}>Skip tutorial</Text>
         </Pressable>
       ) : (
         <Pressable
           style={styles.next}
-          onPress={() => (step >= STEPS.length - 1 ? onDone() : setStep(step + 1))}
+          onPress={() => {
+            sound.press();
+            if (step >= STEPS.length - 1) onDone();
+            else setStep(step + 1);
+          }}
         >
           <Text style={styles.nextText}>Next</Text>
         </Pressable>

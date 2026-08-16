@@ -7,7 +7,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { HORZ, NE, SW } from "../game/types";
 import { radius, shadow, theme } from "../theme";
 import { Button } from "./Button";
-import { TrackPiece } from "./TrackPiece";
+import { RoadPiece } from "./RoadPiece";
 
 export function HelpOverlay({ onClose }: { onClose: () => void }) {
   return (
@@ -16,9 +16,9 @@ export function HelpOverlay({ onClose }: { onClose: () => void }) {
         <Text style={styles.title}>How to play</Text>
 
         <View style={styles.pieces}>
-          <TrackPiece size={44} piece={HORZ} />
-          <TrackPiece size={44} piece={NE} />
-          <TrackPiece size={44} piece={SW} />
+          <RoadPiece size={44} piece={HORZ} />
+          <RoadPiece size={44} piece={NE} />
+          <RoadPiece size={44} piece={SW} />
         </View>
 
         {/* The list is taller than the card on a small phone, so the scrollbar
@@ -26,15 +26,15 @@ export function HelpOverlay({ onClose }: { onClose: () => void }) {
             layout bug rather than as "there is more". */}
         <ScrollView style={{ maxHeight: 330 }} showsVerticalScrollIndicator>
           <Rule icon="flag" title="One route, end to end">
-            Lay a single unbroken track from the entry arrow to the exit arrow. It never branches
-            and never crosses itself.
+            Lay a single unbroken road from the start line to the chequered flag. It never branches and
+            never crosses itself.
           </Rule>
           <Rule icon="calculator" title="The numbers are counts">
-            Each number says how many squares in that row or column hold track — not where. A count
+            Each number says how many squares in that row or column hold road — not where. A count
             turns green once you've found them all.
           </Rule>
           <Rule icon="finger-print" title="Double tap to claim">
-            Double tap a square you're sure carries track. Get it wrong and it costs a heart, so
+            Double tap a square you're sure carries road. Get it wrong and it costs a heart, so
             claim what you can prove.
           </Rule>
           <Rule icon="close" title="Tap or swipe to rule out">
@@ -42,14 +42,14 @@ export function HelpOverlay({ onClose }: { onClose: () => void }) {
             free notes — they cost nothing and are never checked. Squares in a finished row are
             crossed out for you, in a lighter grey.
           </Rule>
-          <Rule icon="git-branch" title="Drag to lay the rails">
-            Drag out from the entry — the lit square — to lay real track. You can do this at any
-            time, not just at the end. Dragging back along the rail rubs it out.
+          <Rule icon="git-branch" title="Drag to lay the road">
+            Drag out from the entry — the lit square — to lay real road. You can do this at any
+            time, not just at the end. Dragging back along the road rubs it out.
           </Rule>
-          <Rule icon="add-circle" title="The rail can claim as it goes">
-            Push the rail into a square you haven't claimed and it claims it for you — the same bet
+          <Rule icon="add-circle" title="The road can claim as it goes">
+            Push the road into a square you haven't claimed and it claims it for you — the same bet
             as a double tap, so a wrong push costs a heart. Squares you've ruled out, and squares
-            the numbers have already settled, turn the rail away for nothing.
+            the numbers have already settled, turn the road away for nothing.
           </Rule>
         </ScrollView>
 
@@ -103,7 +103,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 6,
     marginVertical: 14,
-    backgroundColor: theme.cellTrack,
+    backgroundColor: theme.cellRoad,
     borderRadius: radius.sm,
     paddingVertical: 6,
     alignSelf: "center",

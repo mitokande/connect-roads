@@ -8,6 +8,7 @@ import { HomeScreen } from "./src/components/HomeScreen";
 import { LevelsScreen } from "./src/components/LevelsScreen";
 import { SettingsOverlay } from "./src/components/SettingsOverlay";
 import { haptics } from "./src/haptics";
+import { sound } from "./src/sound";
 import { useBackHandler } from "./src/hooks/useBackHandler";
 import { useGame } from "./src/state/useGame";
 import { theme } from "./src/theme";
@@ -24,6 +25,10 @@ export default function App() {
   useEffect(() => {
     haptics.setEnabled(game.progress.haptics);
   }, [game.progress.haptics]);
+
+  useEffect(() => {
+    sound.setEnabled(game.progress.sound);
+  }, [game.progress.sound]);
 
   const play = useCallback(
     (level: number) => {

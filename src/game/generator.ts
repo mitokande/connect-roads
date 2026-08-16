@@ -16,7 +16,7 @@
 //      revealing three pieces — a board that needs that many gives itself away.
 //
 // The entry and exit pieces are always revealed (the border arrow shows which
-// way the track leaves, and the piece shows how it turns to get there), which is
+// way the road leaves, and the piece shows how it turns to get there), which is
 // also what lets the solver start with a forced first move.
 
 import { countSolutions } from "./solver";
@@ -150,7 +150,7 @@ export type GenerateOptions = {
   size: number;
   /** Extra revealed pieces on top of the ones uniqueness demands. */
   bonusReveals?: number;
-  /** Fraction of the grid the track must cover, as [min, max]. */
+  /** Fraction of the grid the road must cover, as [min, max]. */
   fill?: [number, number];
   /** How many walks to try before giving up. */
   attempts?: number;
@@ -160,7 +160,7 @@ export type GenerateOptions = {
 const MAX_EXTRA_REVEALS = 2;
 
 /**
- * How much of the grid the track should cover. Bigger boards are held to a
+ * How much of the grid the road should cover. Bigger boards are held to a
  * *higher* floor than small ones: a sparse 8×8 leaves the clues so slack that
  * proving uniqueness means exploring a huge space, and the resulting puzzle is
  * mush to solve for the same reason. Density is both the fun and the speed.
@@ -192,7 +192,7 @@ export function generatePuzzle(seed: number, opts: GenerateOptions): Puzzle {
   const rng = mulberry32(seed);
 
   for (let attempt = 0; attempt < attempts; attempt++) {
-    // Terminals on two different sides — a track that enters and leaves through
+    // Terminals on two different sides — a road that enters and leaves through
     // the same edge reads as a dead end at a glance.
     const [sideA, sideB] = shuffled(DIRS, rng);
     const entry = sideCells(size, sideA)[randInt(rng, size)];

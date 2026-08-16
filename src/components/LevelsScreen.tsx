@@ -7,6 +7,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { LEVEL_COUNT, sizeForLevel } from "../game/levels";
 import { haptics } from "../haptics";
+import { sound } from "../sound";
 import { radius, shadow, theme } from "../theme";
 import { IconButton } from "./Button";
 
@@ -56,6 +57,7 @@ export function LevelsScreen({
                     disabled={locked}
                     onPress={() => {
                       haptics.tap();
+                      sound.press();
                       onPick(level);
                     }}
                     style={({ pressed }) => [

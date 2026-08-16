@@ -1,4 +1,4 @@
-// The win card. Appears only after the train has finished its run — the ride is
+// The win card. Appears only after the car has finished its run — the ride is
 // the reward, and a modal on top of it would be talking over the applause.
 
 import { Ionicons } from "@expo/vector-icons";
@@ -42,7 +42,7 @@ export function WinOverlay({ game, onExit }: { game: Game; onExit: () => void })
           },
         ]}
       >
-        <Text style={styles.title}>{perfect ? "Flawless!" : "Track laid!"}</Text>
+        <Text style={styles.title}>{perfect ? "Flawless!" : "Road laid!"}</Text>
         <Text style={styles.sub}>Level {game.level} complete</Text>
 
         <View style={styles.stats}>
@@ -69,7 +69,7 @@ export function WinOverlay({ game, onExit }: { game: Game; onExit: () => void })
         {!last ? (
           <Button label="Next level" size="lg" onPress={game.next} style={{ marginTop: 4 }} />
         ) : (
-          <Text style={styles.done}>That's every level — more track soon!</Text>
+          <Text style={styles.done}>That's every level — more roads soon!</Text>
         )}
         <View style={styles.row}>
           <Button label="Replay" tone="ghost" onPress={game.retry} />
