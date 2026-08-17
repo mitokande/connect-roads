@@ -1,24 +1,41 @@
 // Puzzle generation. Everything here is a pure function of a 32-bit seed, so a
-// level number is all that has to be stored to reproduce a board exactly — no
-// puzzle bank ships with the app, and a save file is just an integer.
+// level number is all that has to be stored to reproduce a board exactly.
 //
-// The pipeline is generate-and-test, in the only order that is cheap:
+// The pipeline is generate-and-test, and the **order of the two gates is the
+// whole design**:
 //
 //   1. Pick two terminals on different sides of the board.
 //   2. Random-walk from one to the other with backtracking, refusing to enter
 //      the exit until the walk is long enough. Refusing early is what makes
 //      paths *wind* — a walk allowed to finish as soon as it can produces a
 //      boring L-shape, and length is the puzzle's whole texture.
-//   3. Read the row/column clues off the finished path.
-//   4. Ask the solver whether the clues admit a second route. If they do, reveal
-//      one more piece and ask again; if a single extra reveal can't force
-//      uniqueness, bin the path and walk a new one. Binning is cheaper than
-//      revealing three pieces — a board that needs that many gives itself away.
+//   3. Read the row/column clues off the finished path, and throw the walk away
+//      unless its shape is worth playing (`shapeIsPlayable`).
+//   4. **Is it deducible with only the two terminals showing?** Ask `deduce.ts`,
+//      and bin the walk if a person could not reason it out. This runs *before
+//      any reveal exists*, which is the invariant the next step depends on.
+//   5. **Reveal pieces until the route's shape is unique.** Aimed, as before: a
+//      cell where the rival route the solver just found disagrees with the
+//      intended one, so that rival cannot survive the next pass.
 //
-// The entry and exit pieces are always revealed (the border arrow shows which
-// way the road leaves, and the piece shows how it turns to get there), which is
-// also what lets the solver start with a forced first move.
+// Step 4 before step 5 is what makes the printed pieces honest. It used to be
+// step 5 alone, and the result was a bank where 80 of 120 levels could not be
+// reasoned out at all — a player deduced 43% of an 8×8 and then had to guess,
+// with three hearts and a checked claim. Uniqueness was never the same property
+// as solvability, and only the solver was being asked.
+//
+// Which leaves the two jobs cleanly split, and neither doing the other's work:
+//
+//   the clues, alone, settle **where** the road goes
+//   the printed pieces settle **what shape** it is
+//
+// The second is a real job, not a crutch: measured, most boards whose road *cells*
+// are fully deducible still admit more than one way to route through them (8 of 8
+// sampled 8×8s), because knowing which squares carry road says nothing about how
+// they turn. That ambiguity is what the reveals are spent on, and because step 4
+// has already passed without them, no reveal can be doing the player's deduction.
 
+import { deduce, deduceInput, terminalCells, type Grade, type Tier } from "./deduce";
 import { countSolutions } from "./solver";
 import {
   bit,
@@ -154,10 +171,92 @@ export type GenerateOptions = {
   fill?: [number, number];
   /** How many walks to try before giving up. */
   attempts?: number;
+  /**
+   * The hardest deduction rule the board may require of the player. See
+   * `deduce.ts` for the ladder; 4 means "never needs assume-and-refute".
+   */
+  maxTier?: Tier;
+  /**
+   * Fewest lines with an *extreme* clue (0, n, or n−1) the board may open with.
+   *
+   * These are where line counting bites, so they are the deduction's footholds.
+   * The old bank had them collapse exactly where they were needed most — 4.0 of
+   * 8 lines on a 4×4 but only 2.4 of 16 on an 8×8, a quarter of the density on
+   * the boards that are already hardest.
+   */
+  minExtremeLines?: number;
 };
 
-/** At most this many reveals beyond the two terminals. */
-const MAX_EXTRA_REVEALS = 2;
+/**
+ * At most this many reveals beyond the two terminals.
+ *
+ * Higher than it used to be, and for a different reason. These no longer buy
+ * uniqueness the clues couldn't earn — the deducibility gate has already passed
+ * without them — they buy a single route *shape*, which is a genuine need on most
+ * boards. The cap is still worth having because every printed piece is one less
+ * thing the connect phase asks.
+ */
+export const MAX_EXTRA_REVEALS = 4;
+
+/** A quarter of the lines, so the footholds scale with the board. */
+const defaultExtremeLines = (size: number) => Math.max(2, Math.round(size * 2 * 0.25));
+
+/**
+ * How many unresolved squares still make an assume-and-refute pass worth trying.
+ *
+ * A refutation resolves one square, which then feeds the cheap tiers and can
+ * cascade — so this is generous rather than tight. It exists only because T5 on a
+ * hopeless board is the most expensive thing in the build.
+ */
+const T5_ESCALATION_REACH = 24;
+
+/**
+ * Is this walk worth playing, before the expensive gates get a look?
+ *
+ * Three cheap shape tests, all of them things the old generator left to chance:
+ * enough extreme clues to give the deduction a way in, enough corners that the
+ * route reads as a route, and not so much of the road lying alongside itself that
+ * the board turns to mush.
+ */
+function shapeIsPlayable(
+  path: Coord[],
+  rows: number[],
+  cols: number[],
+  size: number,
+  minExtreme: number,
+): boolean {
+  let extreme = 0;
+  for (const v of rows) if (v === 0 || v === size || v === size - 1) extreme++;
+  for (const v of cols) if (v === 0 || v === size || v === size - 1) extreme++;
+  if (extreme < minExtreme) return false;
+
+  // Corners. A route of mostly straights is a route with nothing to work out.
+  let turns = 0;
+  for (let i = 1; i < path.length - 1; i++) {
+    const a = path[i - 1];
+    const b = path[i + 1];
+    if (a.r !== b.r && a.c !== b.c) turns++;
+  }
+  const turnRatio = turns / path.length;
+  if (turnRatio < 0.4 || turnRatio > 0.8) return false;
+
+  // Road running alongside itself is legal and interesting; a board that is
+  // mostly that is unreadable at 8×8 cell sizes.
+  const at = new Map<number, number>();
+  path.forEach((cell, i) => at.set(key(cell.r, cell.c), i));
+  let touching = 0;
+  for (let i = 0; i < path.length; i++) {
+    const cell = path[i];
+    for (const [dr, dc] of [
+      [0, 1],
+      [1, 0],
+    ]) {
+      const j = at.get(key(cell.r + dr, cell.c + dc));
+      if (j !== undefined && Math.abs(j - i) !== 1) touching++;
+    }
+  }
+  return touching / path.length <= 0.45;
+}
 
 /**
  * How much of the grid the road should cover. Bigger boards are held to a
@@ -175,17 +274,41 @@ const gridsEqual = (a: Piece[][], b: Piece[][]): boolean =>
   a.every((row, r) => row.every((p, c) => p === b[r][c]));
 
 /**
- * Build a puzzle with exactly one solution. Deterministic in `seed`.
+ * A generated board and the two difficulty readings that matter.
  *
- * Throws only if `attempts` walks in a row all failed to become unique, which
- * for the shipped sizes does not happen — the tests assert it across every
- * level.
+ * `grade` is the board **as the player meets it**, pieces and all — that is what
+ * the ladder sorts on, because it is what the level actually feels like.
+ *
+ * `gate` is the board with **only its terminals**, which is the fairness reading.
+ * The two come apart: a printed piece can turn a board that needed
+ * assume-and-refute into one that falls to plain counting, so `grade` can say T4
+ * where `gate` says T5. Anything policing "this level must never require rule X"
+ * has to read `gate` — reading `grade` lets a board whose *clues* need T5 sit in a
+ * slot that forbids it, which is exactly the bug the level-90 test caught.
  */
-export function generatePuzzle(seed: number, opts: GenerateOptions): Puzzle {
+export type GradedPuzzle = { puzzle: Puzzle; grade: Grade; gate: Grade };
+
+/**
+ * Build a board that is both **deducible** and has **one route shape**.
+ * Deterministic in `seed`.
+ *
+ * The grade comes back alongside, measured on the board *as the player will meet
+ * it* — reveals included. The gate is measured on the terminals-only board; the
+ * grade is measured on the finished one. Those are deliberately two different
+ * questions: the first asks whether the clues carry the puzzle, the second asks
+ * how hard the thing in front of the player is, and the ladder sorts on the
+ * second.
+ *
+ * Throws if `attempts` walks all failed, which for the shipped sizes does not
+ * happen — the tests assert it across every level.
+ */
+export function generateGraded(seed: number, opts: GenerateOptions): GradedPuzzle {
   const { size } = opts;
   const bonusReveals = opts.bonusReveals ?? 0;
   const [minFill, maxFill] = opts.fill ?? defaultFill(size);
-  const attempts = opts.attempts ?? 400;
+  const attempts = opts.attempts ?? 4000;
+  const maxTier = opts.maxTier ?? 4;
+  const minExtreme = opts.minExtremeLines ?? defaultExtremeLines(size);
   const minLen = Math.max(3, Math.round(size * size * minFill));
   const maxLen = Math.max(minLen + 1, Math.round(size * size * maxFill));
 
@@ -210,22 +333,46 @@ export function generatePuzzle(seed: number, opts: GenerateOptions): Puzzle {
       cols[c]++;
     }
 
-    const fixed = new Map<number, Piece>();
-    fixed.set(key(entry.r, entry.c), solution[entry.r][entry.c]);
-    fixed.set(key(exit.r, exit.c), solution[exit.r][exit.c]);
+    // Cheapest gate first: is the shape worth anybody's time?
+    if (!shapeIsPlayable(path, rows, cols, size, minExtreme)) continue;
+
     const reveals: Coord[] = [
       { r: entry.r, c: entry.c },
       { r: exit.r, c: exit.c },
     ];
+    const draft: Puzzle = {
+      size, rows, cols, entry, exit, solution, path, fixed: reveals, seed,
+    };
+
+    // **The deducibility gate, on the terminals alone.** Nothing is revealed yet,
+    // so passing here means the *clues* carry the puzzle. Everything after this
+    // point can only make the board easier, which is what stops a reveal from
+    // ever standing in for a deduction the player was supposed to make.
+    //
+    // Two stages, purely for speed. Assume-and-refute costs a full propagation
+    // per square per hypothesis, and spending it on a board that is nowhere near
+    // solvable took the 8×8 worst case to eleven seconds. So the cheap tiers go
+    // first, and only a board they nearly finished is worth escalating.
+    const termInput = deduceInput(draft, terminalCells(draft));
+    let gate = deduce(termInput, maxTier < 4 ? maxTier : 4);
+    if (!gate.solved) {
+      if (maxTier < 5 || gate.unknown > T5_ESCALATION_REACH) continue;
+      gate = deduce(termInput, 5);
+      if (!gate.solved) continue;
+    }
+
+    const fixed = new Map<number, Piece>();
+    fixed.set(key(entry.r, entry.c), solution[entry.r][entry.c]);
+    fixed.set(key(exit.r, exit.c), solution[exit.r][exit.c]);
 
     const base = { size, rows, cols, entry, exit };
     let res = countSolutions({ ...base, fixed });
     if (!res.exhausted) continue; // too slow to vouch for — try another walk
 
-    // Reveal pieces until the rival routes are gone. Each reveal is aimed: take
-    // a cell where the rival the solver just found disagrees with the intended
-    // solution, and that rival cannot survive the next pass. Revealing a random
-    // path cell instead usually changes nothing and costs a full re-solve.
+    // Now pin the *shape*. Each reveal is aimed: take a cell where the rival the
+    // solver just found disagrees with the intended solution, and that rival
+    // cannot survive the next pass. Revealing a random path cell instead usually
+    // changes nothing and costs a full re-solve.
     let extras = 0;
     while (res.exhausted && res.count > 1 && extras < MAX_EXTRA_REVEALS) {
       const rival = res.solutions.find((s) => !gridsEqual(s, solution));
@@ -240,12 +387,10 @@ export function generatePuzzle(seed: number, opts: GenerateOptions): Puzzle {
       extras++;
       res = countSolutions({ ...base, fixed });
     }
-    // Anything still ambiguous is doing the player's deduction for them by the
-    // time it's pinned down — start over with a fresh walk instead.
     if (!res.exhausted || res.count !== 1) continue;
 
-    // Bonus reveals are difficulty, not correctness: uniqueness already holds,
-    // so these only ever make the board friendlier.
+    // Bonus reveals are difficulty, not correctness: both gates have passed, so
+    // these only ever make the board friendlier.
     if (bonusReveals > 0) {
       const spare = shuffled(
         path.filter((p) => !fixed.has(key(p.r, p.c))),
@@ -257,10 +402,35 @@ export function generatePuzzle(seed: number, opts: GenerateOptions): Puzzle {
       }
     }
 
-    return { size, rows, cols, entry, exit, solution, path, fixed: reveals, seed };
+    const puzzle: Puzzle = {
+      size, rows, cols, entry, exit, solution, path, fixed: reveals, seed,
+    };
+    return { puzzle, grade: deduce(deduceInput(puzzle), maxTier).grade, gate: gate.grade };
   }
 
   throw new Error(`could not generate a ${size}×${size} puzzle for seed ${seed}`);
+}
+
+/** {@link generateGraded} when only the board is wanted. */
+export const generatePuzzle = (seed: number, opts: GenerateOptions): Puzzle =>
+  generateGraded(seed, opts).puzzle;
+
+/**
+ * Print a few more of the route's own pieces.
+ *
+ * Difficulty, never correctness: both gates have already passed on this board, so
+ * an extra reveal can only make it friendlier. Separate from generation so the
+ * bank builder can hand the grace levels their extra piece without paying for a
+ * second search from the same seed.
+ */
+export function withBonusReveals(puzzle: Puzzle, count: number, seed: number): Puzzle {
+  if (count <= 0) return puzzle;
+  const taken = new Set(puzzle.fixed.map((f) => key(f.r, f.c)));
+  const spare = shuffled(
+    puzzle.path.filter((p) => !taken.has(key(p.r, p.c))),
+    mulberry32(seed),
+  );
+  return { ...puzzle, fixed: [...puzzle.fixed, ...spare.slice(0, count)] };
 }
 
 /** The revealed pieces of a puzzle, in the shape the solver wants. */

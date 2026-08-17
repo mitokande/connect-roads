@@ -51,11 +51,27 @@ four squares and then tracing them. It costs exactly what a double tap costs —
 `refuse` is shared — and it has to, because a push that were merely *refused*
 would be a free oracle for "is there road here", and the deduction is the game.
 
-Two squares the road will not push into, both free of charge: ones the player
-crossed out (their note, respected) and ones the clues have already settled
-(`isUnknown`). The second is the important one — since every ✓ is true, a
-settled line genuinely has no road left in it, so an auto-crossed square is
-*provably* empty and a push there would be a trap that always costs a heart.
+**Only the player's own ✕ turns the road away for free** (`isUnknown`) — their
+note, respected, and it tells them nothing they didn't write themselves. The
+clues get no say: a square in a line whose count is already accounted for is
+provably empty, and the road still pushes into it and still charges, because
+noticing that is exactly the counting the player is there to do. The board used
+to exempt those squares, which was three things at once — inconsistent with the
+double tap, which charges for the same false belief; silent, since no ✕ is drawn
+there to explain the refusal, so a miscount got corrected without being
+reported; and a hole in the oracle rule, because an exemption the player can't
+see is itself a free probe (refused means empty, at no cost).
+
+**A push stops being a claim once the deduction is done.** With every road
+square claimed there is nothing left to bet on — an unmarked square is empty by
+exhaustion and the player knows it — so `paveStep` offers no claim at all past
+`deductionComplete`. What remains is one long shaping gesture, and a fast drag
+clipping a blank square on its way round a corner is a slip of the finger, not a
+mistaken deduction; charging a deduction heart in the phase the game has just
+announced is *not* about deduction reads as the board turning on the player at
+the finish. Note where that draws the line: not "which squares are provably
+empty" (the clue-based exemption above, rejected) but "is there any road left to
+find" — the game's own phase flip.
 
 Both gestures live on the same grid at the same time, so a touch has to belong
 to one of them. `grabsRoad` decides: a touch on the drawn road — or on the entry,
@@ -104,14 +120,21 @@ solution *dimmed underneath the player's own marks* (`ghosts` in `useGame`)
 rather than clearing the board — at that moment the only interesting question is
 "where did I go wrong", and a wiped grid answers it with nothing.
 
-### Crosses have two authorships
+### Every cross is the player's
 
-`markAuto` (pale) is the board crossing out what the clues have already settled;
-`mark` (slate) is the player's own. Same glyph, different weight. A player
-scanning the grid needs to know which crosses are theirs before trusting them.
-Auto-crosses are **derived, never stored** (`isAutoBlocked`), so they can't drift
-out of step with the marks and un-claiming a square takes its knock-on crosses
-with it.
+The board draws no ✕ of its own. It used to: a settled row or column had its
+leftovers crossed out in a paler grey, derived rather than stored so they
+couldn't drift. Two things were wrong with it. Sweeping a settled line is the
+game's central deduction, and filling it in the instant the last ✓ landed did
+that deduction for the player — the grid walked itself to "obviously finished"
+without them ever reading the clue. And it made the glyph ambiguous: a player
+scanning the grid had to sort their own marks from the board's before trusting
+any of them, which is a tax on the one thing they most need to trust.
+
+So there is one ✕, in one weight (`mark`), and it means "the player says this is
+empty". Nothing else on the grid crosses anything out, and no rule consults a
+settled line on the player's behalf either — the exemption that used to survive
+in `isUnknown` went with the marks, for the reasons above.
 
 `lineOverCrossed` turns a clue red when the player has ruled out so much of a
 line that its count can no longer be met. Nothing is enforced — the notes stay
@@ -124,12 +147,13 @@ ten more moves get built on it.
 App.tsx                     screens + overlays, no game logic
 src/game/                   pure, headless, no React — the whole rulebook
   types.ts                  directions, pieces as bitmasks, Puzzle
-  solver.ts                 exhaustive path search; the uniqueness referee
-  generator.ts              seeded generate-and-test
+  solver.ts                 exhaustive path search; the *shape* uniqueness referee
+  deduce.ts                 the five human rules; the *solvability* gate + grader
+  generator.ts              seeded generate-and-test, gated on both
   codec.ts                  compact puzzle serialisation
   levelData.ts              GENERATED — the baked level bank
   levels.ts                 the ladder: level → size, seed, puzzle
-  board.ts                  rules of play (marks, auto-crosses, route legality)
+  board.ts                  rules of play (marks, clue tallies, route legality)
   runTests.ts               npm test
 src/state/useGame.ts        board reducer + AsyncStorage progress
 src/state/useGameSounds.ts  what the board sounds like, derived from what changed
@@ -147,22 +171,49 @@ of boards to completion in a couple of seconds with no renderer.
 
 ## Generation, and why the bank is baked
 
-`generatePuzzle(seed, opts)` is generate-and-test:
+`generateGraded(seed, opts)` is generate-and-test, and **the order of its two
+gates is the design**:
 
 1. Two terminals on **different** sides (same-side terminals read as a dead end).
 2. A self-avoiding random walk between them, **refusing to enter the exit until
    the walk is long enough**. That refusal is what makes routes wind — a walk
    allowed to finish as soon as it can produces a boring L, and length is the
    puzzle's whole texture.
-3. Read the clues off the finished path.
-4. Ask the solver for a second solution. If there is one, reveal a piece and ask
-   again; if two reveals don't settle it, throw the walk away and start over.
+3. Read the clues off the finished path, and bin the walk unless its shape is
+   worth playing (`shapeIsPlayable`: enough extreme clues to give the deduction a
+   way in, enough corners, not too much road lying alongside itself).
+4. **Is it deducible with only the two terminals showing?** Ask `deduce.ts`, and
+   bin the walk if a person could not reason it out.
+5. **Reveal pieces until the route's shape is unique** — aimed, so each reveal
+   kills the rival the solver just found.
 
-**Reveals are aimed, not random.** The solver returns the rival solutions it
-found, and the generator reveals a cell where the rival *disagrees* with the
-intended path — so that rival cannot survive the next pass. Revealing a random
-path cell usually changes nothing and costs a full re-solve; switching to aimed
-reveals took worst-case 8×8 generation from 5.8s to 1.9s.
+**Uniqueness was never solvability, and only the solver was being asked.** Step 4
+did not exist, and the bank paid for it: measured with a human rule engine, **80 of
+120 shipped levels could not be deduced at all**. On an 8×8 a player reasoned out
+43% of the grid and then hit a wall with ~37 squares unresolved and three hearts —
+the late ladder was a coin flip wearing a puzzle's clothes. It is 120 of 120 now.
+
+Which leaves the two jobs split, neither doing the other's work:
+
+> the clues, alone, settle **where** the road goes;
+> the printed pieces settle **what shape** it is.
+
+The second is a real job rather than a crutch. Most boards whose road *cells* are
+fully deducible still admit more than one way to route through them — 8 of 8
+sampled 8×8s — because knowing which squares carry road says nothing about how
+they turn. That is what reveals are spent on, and because step 4 has already
+passed without them, **no reveal can be standing in for a deduction**. Aimed
+reveals also matter for speed: revealing a random path cell usually changes
+nothing and costs a full re-solve.
+
+**Reveals are graded by two readings, and the difference bites.** A printed piece
+can drop a board that needs assume-and-refute down to plain counting, so the tier
+the *clues* demand (`gate`) and the tier the *played board* demands (`grade`) come
+apart. Anything policing "this level may not require rule X" must read `gate`;
+ranking on `grade` put a clues-need-T5 board at level 90, where the tests refused
+it. `ladderScore` therefore leads with the clue tier, which keeps clue difficulty
+monotonic across a band for free and so keeps the hard-rule boards in the only
+slots allowed to hold them.
 
 **Density is both fun and speed** (`defaultFill`). Bigger boards are held to a
 higher fill floor than small ones: a sparse 8×8 leaves the clues so slack that
@@ -178,21 +229,41 @@ even* — the parity half alone kills about half the branches), and printed piec
 ran out, and the generator throws such candidates away rather than shipping a
 board it can't vouch for.
 
-**The bank.** Generation is deterministic in the seed, so the app *could* call
-the generator directly. It doesn't: proving an 8×8 unique takes 0.5–2s on a
-laptop, which is several frozen seconds on a phone. `npm run levels:build` bakes
-all 120 into `src/game/levelData.ts` as one line each, and `puzzleForLevel`
-parses instead of searching. Levels past the bank still generate on the spot, so
-a longer ladder degrades rather than crashes.
+**The bank, and why it is *sorted*.** `npm run levels:build` bakes all 120 into
+`src/game/levelData.ts` as one line each (~66s), and `puzzleForLevel` parses
+instead of searching — building an 8×8 that is both deducible and single-shaped
+takes around half a second, which is a frozen screen on a phone.
+
+But the builder also does something the app could not: it **grades and orders**.
+Difficulty used to be whatever the seed produced, so levels 76 and 120 were
+statistically the same 8×8 board and the only thing that grew across the ladder
+was the grid. Now each slot generates `TRIES_PER_SLOT` candidates and keeps the
+**hardest**, then the band ships sorted by `ladderScore`.
+
+Keeping the hardest is a counterweight, not greed: deducible boards are rare and
+the easy ones are far commoner, so taking the first acceptable candidate fills the
+whole ladder with T1/T2 boards. A first cut of this script did exactly that — every
+band came out T1/T2 with nothing above it.
+
+**The difficulty dial is the foothold floor**, and it is adaptive. Extreme clues
+(0, _n_, _n−1_) are where counting bites, so *withholding* them is what forces the
+harder rules; a band opens generous and tightens. It has to adapt because extreme
+clues get rarer as boards grow — 4.0 of 8 lines on a 4×4 but 2.4 of 16 on an 8×8 —
+so one fixed fraction is either trivial small or impossible large. Asking 35% of an
+8×8's lines starved the band outright. Each slot now asks for what it wants and
+settles for what the size can supply.
 
 Only the irreducible facts are stored — size, terminals, route, which cells start
 revealed. The piece grid and the clues are *recomputed* on decode, which keeps
 the bank small and makes it impossible for a stored clue to contradict a stored
-solution.
+solution. Grades are **not** stored: the engine recomputes them, so they can't go
+stale against the board they describe.
 
-**Re-running `levels:build` after touching the generator changes existing
-levels.** Fine before release, not after — the tests pin the bank, not the
-generator.
+**Re-running `levels:build` changes existing levels** — the pool is graded and
+sorted, so it is not even stable under an unchanged generator. Fine before release,
+not after. The tests pin the bank's *properties* (deducible, single-shaped, ordered)
+rather than its bytes, which is what the old "matches the generator" check was only
+ever a proxy for.
 
 ## Rendering
 
@@ -324,7 +395,16 @@ Two things that only bite off the web build, both worth keeping:
 
 120 levels: 4×4 (1–10), 5×5 (11–25), 6×6 (26–45), 7×7 (46–75), 8×8 (76–120).
 The first three levels of each new size get one bonus revealed piece — that is
-difficulty, not correctness, since uniqueness already holds by then.
+difficulty, not correctness, since both gates have already passed by then.
+
+**Within a band, difficulty ramps** (see the bank, above), and the ramp is what
+`npm test` checks — not that a board is hard, but that it is harder than the one
+before it. Levels below `HARD_TIER_FROM` (96) must fall to pure forward deduction;
+from 96 up a board's clues may require the assume-and-refute rule, at depth one.
+That last tier is still sound reasoning rather than a gamble, which is what keeps
+it compatible with a checked claim and three hearts: the half that concludes
+*empty* is written down with a free cross, and the half that concludes *road* only
+costs a heart if the player mis-executes it.
 
 A level is nothing but a number: its size and seed both derive from it, so
 progress persists as a single integer. Clearing the newest level unlocks the
@@ -347,6 +427,20 @@ npx expo export --platform android   bundle check
 `npm test` asserts, for every one of the 120 shipped boards: clues match the
 path, the path is a genuine self-avoiding walk, pieces face their neighbours,
 only the terminals leave the grid, the solver finds **exactly one** solution and
-it is the intended one, the bank still matches what the generator makes today,
-and the play rules accept the solution's own moves while refusing jumps, restarts
-and unclaimed squares. ~30k checks, a couple of seconds.
+it is the intended one, the bank round-trips through the codec, and the play rules
+accept the solution's own moves while refusing jumps, restarts and unclaimed
+squares.
+
+And the assertions this ladder exists for:
+
+- **it is deducible from the clues alone**, with only the terminals showing, using
+  no rule beyond the level's cap. This is the headline check and the one the old
+  bank failed 80 times over.
+- the deduction is **sound** — every square it settles matches the solution, so a
+  bug that made the engine over-claim can't pass as a puzzle getting easier.
+- each band is **ordered easiest-first** and actually gets harder end to end.
+- the engine's tiers are a real ladder: a board graded at tier _n_ is checked to be
+  unsolvable at _n−1_, so a bug that quietly folded one tier's reasoning into
+  another would show up as a flat ladder rather than passing silently.
+
+~61k checks, a couple of seconds.

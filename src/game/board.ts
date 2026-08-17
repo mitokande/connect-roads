@@ -95,19 +95,6 @@ export function lineOverCrossed(puzzle: Puzzle, marks: Marks, index: number, col
   return size - blocked < clue;
 }
 
-/**
- * Cells the board crosses out on the player's behalf: everything left over in a
- * row or column whose clue is already accounted for. Derived rather than stored,
- * so it can never drift out of step with the marks — and so undoing a ✓ takes
- * its knock-on ✕s with it.
- */
-export function isAutoBlocked(puzzle: Puzzle, marks: Marks, r: number, c: number): boolean {
-  if (markAt(marks, puzzle.size, r, c) !== MARK_NONE) return false;
-  return (
-    rowFound(puzzle, marks, r) >= puzzle.rows[r] || colFound(puzzle, marks, c) >= puzzle.cols[c]
-  );
-}
-
 /** Total road cells in the solution. */
 export const roadTotal = (puzzle: Puzzle): number => puzzle.path.length;
 
@@ -118,10 +105,9 @@ export function foundTotal(marks: Marks): number {
 }
 
 /**
- * Squares the player has crossed out by hand. Auto-crosses are derived rather
- * than stored, so they are deliberately not counted here — this is a tally of
- * what the *player* did, which is what makes it usable as "a mark just went
- * down" or "a mark just came back up".
+ * Squares the player has crossed out. Every ✕ on the board is now one of these —
+ * a tally of what the *player* did, which is what makes it usable as "a mark just
+ * went down" or "a mark just came back up".
  */
 export function blockedTotal(marks: Marks): number {
   let n = 0;
@@ -201,19 +187,37 @@ export function grabsRoad(puzzle: Puzzle, route: Coord[], target: Coord): boolea
 }
 
 /**
- * A square nothing is known about yet: no mark of the player's, and not one the
- * clues have already settled. These are the only squares the road is allowed to
- * be pushed into.
+ * A square the player has said nothing about. These are the squares the road may
+ * be pushed into, and a push into one is a claim — checked, and a heart if it is
+ * wrong.
  *
- * The auto-crossed half matters more than it looks. Because every ✓ is true, a
- * line whose count is accounted for genuinely has no road left in it — so an
- * auto-crossed square is *provably* empty, and letting the road try one would be
- * a trap that always costs a heart.
+ * Only the player's own ✕ turns the road away, and it does so for free: that
+ * mark is their note, and respecting it costs nothing because it tells them
+ * nothing they didn't write themselves.
+ *
+ * **The clues do not get a say here**, and that is deliberate. Squares in a row
+ * or column whose count is already accounted for used to be exempt too — the
+ * road simply declined to enter them. It reads as mercy and works as neither:
+ *
+ *  - It is *inconsistent*. Double-tapping such a square costs a heart (`CLAIM`
+ *    asks only `isRoadCell`). The same false belief, priced two ways depending
+ *    on which finger motion expressed it.
+ *  - It is *silent*. There is no longer a ✕ printed there to explain the
+ *    refusal, so a player who has miscounted a line pushes, watches nothing
+ *    happen, and learns nothing. The heart is what says "you have miscounted".
+ *  - It *punched a hole in the oracle rule*. A push must be offered even when
+ *    the square turns out to be empty, or the drag becomes a free probe for
+ *    "is there road here?". An exemption the player cannot see is exactly such a
+ *    probe: refused means empty, at no cost.
+ *
+ * The flick-overshoot worry that seems to argue for the exemption is already
+ * answered somewhere better — a claim that costs a heart ends the stroke, so one
+ * careless drag can spend one heart, never three.
  */
 export function isUnknown(puzzle: Puzzle, marks: Marks, r: number, c: number): boolean {
   const { size } = puzzle;
   if (r < 0 || c < 0 || r >= size || c >= size) return false;
-  return markAt(marks, size, r, c) === MARK_NONE && !isAutoBlocked(puzzle, marks, r, c);
+  return markAt(marks, size, r, c) === MARK_NONE;
 }
 
 /** What the road's next step towards a dragged-at cell would be. */
@@ -237,6 +241,23 @@ export type PaveStep =
  * and costing a heart when it is wrong. It has to be — a push that were merely
  * refused would turn the drag into a free oracle for "is there road here", and
  * the deduction is the game.
+ *
+ * **Once the deduction is done, a push claims nothing.** `deductionComplete`
+ * means every road square is already claimed, so an unmarked square is empty by
+ * exhaustion and the player knows it — there is no belief left to bet and nothing
+ * for an oracle to reveal. What is left is one long shaping gesture, and a fast
+ * drag that clips a blank square on its way round a corner is a slip of the
+ * finger, not a mistaken deduction. Charging a deduction heart in the phase the
+ * game has just announced is no longer about deduction reads as the board turning
+ * on the player at the finish.
+ *
+ * Note what this is *not*: a clue-based exemption. Mid-deduction, a square whose
+ * row or column is already accounted for is provably empty too — and the road
+ * will still push into it and still charge, because noticing that a settled line
+ * has nothing left in it is precisely the counting the player is there to do.
+ * The board no longer does that step for them, so it cannot excuse them from it
+ * either. The line is drawn where the game itself draws it: while road remains to
+ * be found, a push is a claim.
  */
 export function paveStep(
   puzzle: Puzzle,
@@ -262,6 +283,7 @@ export function paveStep(
     const next = connectStep(puzzle, marks, route, cand);
     if (next) return { kind: "move", route: next };
   }
+  if (deductionComplete(puzzle, marks)) return null;
   for (const cand of cands) {
     if (!isUnknown(puzzle, marks, cand.r, cand.c)) continue;
     // Ask the same rules again as if the square were claimed: that way a push

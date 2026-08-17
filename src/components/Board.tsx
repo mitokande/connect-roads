@@ -28,7 +28,6 @@ import Svg, { Polygon, Rect } from "react-native-svg";
 import {
   connectStep,
   grabsRoad,
-  isAutoBlocked,
   lineOverCrossed,
   MARK_BLOCKED,
   MARK_NONE,
@@ -255,7 +254,6 @@ export function Board(props: BoardProps) {
           ghost={piece !== null && laid === null && fixedPiece === null}
           claimed={piece === null && mark === MARK_ROAD}
           blocked={mark === MARK_BLOCKED}
-          auto={mark === MARK_NONE && isAutoBlocked(puzzle, marks, r, c)}
           glow={(head !== null && head.r === r && head.c === c) || (!!hint && hint.r === r && hint.c === c)}
           wrong={!!wrong && wrong.r === r && wrong.c === c}
         />,

@@ -9,7 +9,7 @@ import { LEVEL_COUNT } from "../game/levels";
 import { haptics } from "../haptics";
 import type { Game } from "../state/useGame";
 import { MAX_HEARTS } from "../state/useGame";
-import { radius, shadow, theme } from "../theme";
+import { overlayLift, radius, shadow, theme } from "../theme";
 import { Button } from "./Button";
 
 export function WinOverlay({ game, onExit }: { game: Game; onExit: () => void }) {
@@ -171,6 +171,7 @@ function Confetti() {
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
+    ...overlayLift,
     backgroundColor: "rgba(34,54,75,0.35)",
     alignItems: "center",
     justifyContent: "center",

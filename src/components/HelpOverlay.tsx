@@ -5,7 +5,7 @@ import React from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { HORZ, NE, SW } from "../game/types";
-import { radius, shadow, theme } from "../theme";
+import { overlayLift, radius, shadow, theme } from "../theme";
 import { Button } from "./Button";
 import { RoadPiece } from "./RoadPiece";
 
@@ -39,8 +39,8 @@ export function HelpOverlay({ onClose }: { onClose: () => void }) {
           </Rule>
           <Rule icon="close" title="Tap or swipe to rule out">
             A single tap crosses a square out, and dragging crosses out a whole run. Crosses are
-            free notes — they cost nothing and are never checked. Squares in a finished row are
-            crossed out for you, in a lighter grey.
+            free notes — they cost nothing and are never checked. Once a row's count is complete,
+            sweep the rest of it out yourself.
           </Rule>
           <Rule icon="git-branch" title="Drag to lay the road">
             Drag out from the entry — the lit square — to lay real road. You can do this at any
@@ -48,8 +48,8 @@ export function HelpOverlay({ onClose }: { onClose: () => void }) {
           </Rule>
           <Rule icon="add-circle" title="The road can claim as it goes">
             Push the road into a square you haven't claimed and it claims it for you — the same bet
-            as a double tap, so a wrong push costs a heart. Squares you've ruled out, and squares
-            the numbers have already settled, turn the road away for nothing.
+            as a double tap, so a wrong push costs a heart. Squares you've crossed out turn the road
+            away for nothing. Once you've found every road square, pushing costs nothing at all.
           </Rule>
         </ScrollView>
 
@@ -84,6 +84,7 @@ function Rule({
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
+    ...overlayLift,
     backgroundColor: "rgba(34,54,75,0.4)",
     alignItems: "center",
     justifyContent: "center",

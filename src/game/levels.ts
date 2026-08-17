@@ -3,6 +3,7 @@
 // device generates byte-identical boards.
 
 import { decodePuzzle } from "./codec";
+import type { Tier } from "./deduce";
 import { generatePuzzle } from "./generator";
 import { LEVEL_BANK } from "./levelData";
 import type { Puzzle } from "./types";
@@ -20,6 +21,21 @@ const BANDS: [number, number][] = [
 
 /** Levels at the start of a new size that get one extra piece revealed. */
 export const GRACE_LEVELS = 3;
+
+/** From here up, a board may require assume-and-refute (`deduce.ts` tier 5). */
+export const HARD_TIER_FROM = 96;
+
+/**
+ * The hardest rule a level is allowed to demand.
+ *
+ * Everything below {@link HARD_TIER_FROM} must fall to pure forward deduction —
+ * counting, two-ways-out, connectivity, line intersection — so the player is
+ * never asked to hold a hypothesis in their head. The last stretch may ask for
+ * one, at depth one only: assume a square, follow it to a contradiction, and take
+ * that as proof of the opposite. That is still sound reasoning rather than a
+ * gamble, which is what keeps it compatible with a checked claim and three hearts.
+ */
+export const tierCapForLevel = (level: number): Tier => (level >= HARD_TIER_FROM ? 5 : 4);
 
 export function sizeForLevel(level: number): number {
   let size = BANDS[0][1];
@@ -52,10 +68,16 @@ const cache = new Map<number, Puzzle>();
  * The board for a level.
  *
  * Shipped levels come out of the baked bank (`npm run levels:build`) so opening
- * one is a string parse rather than a search — an 8×8 takes the generator a
- * second or two to *prove* unique, which is a frozen screen on a phone. Levels
- * past the bank fall back to generating on the spot, so a future ladder that
- * outgrows the bank still plays rather than crashing.
+ * one is a string parse rather than a search — building an 8×8 that is both
+ * deducible and single-shaped takes the generator around half a second, and the
+ * hard band several, which is a frozen screen on a phone.
+ *
+ * Past the bank there is a fallback, and it is a **degrade path rather than a
+ * supported one**: it relaxes to the easy tier cap and a small attempt budget so
+ * it returns *something* rather than hanging, which means a board looser than the
+ * ones the bank was graded into. With `LEVEL_COUNT` levels and a bank of the same
+ * length it is unreachable in practice; it exists so a longer ladder degrades
+ * instead of crashing.
  */
 export function puzzleForLevel(level: number): Puzzle {
   const hit = cache.get(level);
@@ -66,6 +88,8 @@ export function puzzleForLevel(level: number): Puzzle {
     : generatePuzzle(levelSeed(level), {
         size: sizeForLevel(level),
         bonusReveals: bandIndex(level) < GRACE_LEVELS ? 1 : 0,
+        maxTier: 4,
+        attempts: 400,
       });
   cache.set(level, puzzle);
   return puzzle;

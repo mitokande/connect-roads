@@ -14,11 +14,11 @@ import {
   connectStep,
   deductionComplete,
   blockedTotal,
+  colFound,
   foundTotal,
   grabsRoad,
   hintCell,
   initialMarks,
-  isAutoBlocked,
   isUnknown,
   lineOverCrossed,
   MARK_BLOCKED,
@@ -28,6 +28,7 @@ import {
   nextRouteCell,
   paveStep,
   routePieces,
+  rowFound,
   shownPiece,
   stubDir,
   roadTotal,
@@ -36,15 +37,34 @@ import {
   type Marks,
 } from "./board";
 import { decodePuzzle, encodePuzzle } from "./codec";
-import { fixedMap, generatePuzzle, mulberry32, piecesFromPath } from "./generator";
+import {
+  deduce,
+  deduceInput,
+  ladderScore,
+  terminalCells,
+  NO_ROAD,
+  ROAD,
+  UNKNOWN,
+  type Tier,
+} from "./deduce";
+import {
+  fixedMap,
+  generateGraded,
+  generatePuzzle,
+  MAX_EXTRA_REVEALS,
+  mulberry32,
+  piecesFromPath,
+} from "./generator";
 import { LEVEL_BANK } from "./levelData";
 import {
   bandIndex,
   GRACE_LEVELS,
+  HARD_TIER_FROM,
   LEVEL_COUNT,
   levelSeed,
   puzzleForLevel,
   sizeForLevel,
+  tierCapForLevel,
 } from "./levels";
 import { countSolutions } from "./solver";
 import {
@@ -139,10 +159,15 @@ function auditPuzzle(p: Puzzle, label: string) {
     `${label}: terminals are different cells`,
   );
 
-  // Revealed pieces: the two terminals plus at most two more.
-  // Two terminals, at most two reveals to force uniqueness, at most one bonus.
+  // Revealed pieces: the two terminals, the shape reveals, and at most one bonus.
+  // Derived from the generator's own cap rather than restated, so raising that cap
+  // can't leave this quietly asserting the old number.
+  const revealCeiling = 2 + MAX_EXTRA_REVEALS + 1;
   check(p.fixed.length >= 2, `${label}: terminals are revealed`);
-  check(p.fixed.length <= 5, `${label}: at most five pieces revealed (got ${p.fixed.length})`);
+  check(
+    p.fixed.length <= revealCeiling,
+    `${label}: at most ${revealCeiling} pieces revealed (got ${p.fixed.length})`,
+  );
   for (const cell of p.fixed) {
     check(
       p.solution[cell.r][cell.c] !== EMPTY,
@@ -190,8 +215,8 @@ function auditPlay(p: Puzzle, label: string) {
     `${label}: claimed count equals the road total`,
   );
 
-  // Crosses are counted by hand only: the ones the board derives are not marks,
-  // so the tally the sound layer listens to never moves on its own.
+  // Every cross is the player's, so the tally the sound layer listens to only
+  // ever moves when the player moves it.
   check(blockedTotal(marks) === 0, `${label}: a solved deduction has no crosses of its own`);
   check(
     blockedTotal(withMark(initialMarks(p), p.size, 0, 0, MARK_BLOCKED)) === 1 &&
@@ -199,13 +224,21 @@ function auditPlay(p: Puzzle, label: string) {
     `${label}: crossing one square out counts exactly one`,
   );
 
-  // A finished row crosses out its own leftovers.
+  // Only a mark of the player's makes a square known. A settled row or column
+  // proves its leftovers empty, but the board keeps that to itself: it must not
+  // quietly exempt those squares from the road's push, or "refused" would mean
+  // "empty" and the drag would be a free probe. Unmarked is unknown, full stop.
   for (let r = 0; r < p.size; r++) {
     for (let c = 0; c < p.size; c++) {
-      if (p.solution[r][c] === EMPTY) {
+      const settled = rowFound(p, marks, r) >= p.rows[r] || colFound(p, marks, c) >= p.cols[c];
+      check(
+        isUnknown(p, marks, r, c) === (markAt(marks, p.size, r, c) === MARK_NONE),
+        `${label}: ${r},${c} is unknown exactly while the player hasn't marked it`,
+      );
+      if (p.solution[r][c] === EMPTY && settled) {
         check(
-          isAutoBlocked(p, marks, r, c),
-          `${label}: ${r},${c} is auto-crossed once its lines are settled`,
+          isUnknown(p, marks, r, c),
+          `${label}: a settled line doesn't exempt empty ${r},${c} from the push`,
         );
       }
     }
@@ -355,8 +388,9 @@ function auditPlay(p: Puzzle, label: string) {
     check(next !== null, `${label}: the solution's own step to ${cell.r},${cell.c} is legal`);
     if (!next) return;
     route = next;
-    // Nothing is unknown once the deduction is finished — every empty square is
-    // settled by the clues — so from here no drag can cost a heart.
+    // With every road square claimed there is nothing left to claim, so from here
+    // the drag only ever moves: the shaping gesture can't cost a heart, however
+    // wide a fast finger swings.
     const tip = route[route.length - 1];
     for (const d of DIRS) {
       const step = paveStep(p, marks, route, { r: tip.r + DR[d], c: tip.c + DC[d] });
@@ -479,32 +513,191 @@ console.log("Connect Roads — core tests\n");
   check(seeds.size === LEVEL_COUNT, "every level draws its own seed");
 }
 
-// --- 3b. The baked bank is the generator's own output ------------------------
+// --- 3b. The baked bank ------------------------------------------------------
 {
   check(LEVEL_BANK.length === LEVEL_COUNT, "the bank holds every shipped level");
 
-  // Re-generate a few bands' worth and confirm the bank didn't drift from the
-  // generator. (8×8 is left out on purpose — it is seconds of search per board,
-  // and the audit below re-proves every baked level from its clues anyway.)
-  for (const level of [1, 5, 11, 26, 46]) {
-    const fresh = generatePuzzle(levelSeed(level), {
-      size: sizeForLevel(level),
-      bonusReveals: bandIndex(level) < GRACE_LEVELS ? 1 : 0,
-    });
+  // This used to assert the bank *was* `generatePuzzle(levelSeed(level))`, and it
+  // deliberately no longer can: the builder generates a surplus per band, grades
+  // every candidate and ships them sorted, so a level's board is chosen by its
+  // difficulty rather than drawn from its own seed. What replaces the drift check
+  // is stronger and lives below — every baked board is re-proved deducible,
+  // single-shaped, and correctly ordered, which is what the drift check was only
+  // ever a proxy for.
+  //
+  // The round trip still has to be exact, since the bank stores only the route
+  // and recomputes the clues and pieces from it.
+  for (const level of [1, 5, 11, 26, 46, 76, 96, LEVEL_COUNT]) {
     const baked = decodePuzzle(LEVEL_BANK[level - 1], levelSeed(level));
     check(
-      encodePuzzle(fresh) === encodePuzzle(baked),
-      `level ${level}: the bank matches what the generator makes today`,
+      encodePuzzle(baked) === LEVEL_BANK[level - 1],
+      `level ${level}: the bank line round-trips through the codec`,
     );
     check(
-      JSON.stringify(fresh.solution) === JSON.stringify(baked.solution),
-      `level ${level}: decoding rebuilds the piece grid`,
+      JSON.stringify(baked.solution) ===
+        JSON.stringify(piecesFromPath(baked.path, baked.entry, baked.exit, baked.size)),
+      `level ${level}: decoding rebuilds the piece grid from the route`,
+    );
+    const rows = new Array<number>(baked.size).fill(0);
+    const cols = new Array<number>(baked.size).fill(0);
+    for (const { r, c } of baked.path) {
+      rows[r]++;
+      cols[c]++;
+    }
+    check(
+      JSON.stringify(baked.rows) === JSON.stringify(rows) &&
+        JSON.stringify(baked.cols) === JSON.stringify(cols),
+      `level ${level}: decoding rebuilds the clues from the route`,
+    );
+    check(sizeForLevel(level) === baked.size, `level ${level}: the bank line is the right size`);
+  }
+}
+
+// --- 3c. Every shipped board can be reasoned out ----------------------------
+//
+// The headline assertion of the whole suite, and the one the bank used to fail:
+// uniqueness was being proved and solvability was not, so 80 of 120 levels could
+// not be deduced at all — a player reasoned out 43% of an 8×8 and then had to
+// guess, with three hearts and a checked claim.
+//
+// The gate is run on the **terminals alone**, which is stricter than what the
+// player gets. That ordering is the invariant the generator is built around: the
+// clues have to carry the deduction on their own, so no printed piece can be
+// quietly standing in for a deduction the player was supposed to make.
+{
+  const ramp = new Map<number, number[]>();
+
+  for (let level = 1; level <= LEVEL_COUNT; level++) {
+    const p = puzzleForLevel(level);
+    const cap = tierCapForLevel(level);
+
+    const bare = deduce(deduceInput(p, terminalCells(p)), cap);
+    check(
+      bare.solved,
+      `level ${level}: deducible from the clues alone (${bare.unknown} squares left, tier cap ${cap})`,
+    );
+    check(!bare.contradiction, `level ${level}: the clues don't contradict themselves`);
+
+    // Sound, not just complete: every square it settled must match the truth.
+    let wrong = 0;
+    for (let r = 0; r < p.size; r++) {
+      for (let c = 0; c < p.size; c++) {
+        const truth = p.solution[r][c] !== EMPTY ? ROAD : NO_ROAD;
+        const got = bare.state[r * p.size + c];
+        if (got !== UNKNOWN && got !== truth) wrong++;
+      }
+    }
+    check(wrong === 0, `level ${level}: deduction never contradicts the solution`);
+
+    // As the player meets it — reveals included — for the grade and the ramp.
+    const played = deduce(deduceInput(p), cap);
+    check(played.solved, `level ${level}: still deducible with its pieces showing`);
+    check(
+      played.grade.maxTier <= cap,
+      `level ${level}: needs no rule beyond tier ${cap} (used T${played.grade.maxTier})`,
+    );
+    if (level < HARD_TIER_FROM) {
+      check(
+        played.grade.maxTier <= 4,
+        `level ${level}: never asks for assume-and-refute (used T${played.grade.maxTier})`,
+      );
+    }
+
+    const band = sizeForLevel(level);
+    if (!ramp.has(band)) ramp.set(band, []);
+    ramp.get(band)!.push(ladderScore(bare.grade, played.grade));
+  }
+
+  // Each band is a ramp, not a bag: difficulty rises through it. This is the
+  // fault that made levels 76 and 120 statistically the same 8×8 board — the seed
+  // was a hash of the level number and nothing ever graded the result.
+  for (const [size, scores] of [...ramp].sort((a, b) => a[0] - b[0])) {
+    let dip = -1;
+    for (let i = 1; i < scores.length; i++) {
+      if (scores[i] < scores[i - 1] && dip < 0) dip = i;
+    }
+    check(
+      dip < 0,
+      `the ${size}×${size} band is ordered easiest-first` +
+        (dip < 0 ? "" : ` (dips at slot ${dip}: ${scores[dip - 1]} → ${scores[dip]})`),
     );
     check(
-      JSON.stringify(fresh.rows) === JSON.stringify(baked.rows) &&
-        JSON.stringify(fresh.cols) === JSON.stringify(baked.cols),
-      `level ${level}: decoding rebuilds the clues`,
+      scores[scores.length - 1] > scores[0],
+      `the ${size}×${size} band actually gets harder (${scores[0]} → ${scores[scores.length - 1]})`,
     );
+  }
+}
+
+// --- 3d. The engine's tiers are a real ladder -------------------------------
+//
+// Each tier has to *earn* its place: a board it solves must be a board the tier
+// below cannot. Without this, a bug that quietly folded T4's reasoning into T2
+// would still pass everything above — every board would come out "solvable", the
+// grades would collapse to one value, and the ladder would silently go flat.
+{
+  /** The tier each generated board needed, and whether one lower is enough. */
+  function tierIsRequired(seed: number, size: number, cap: Tier): void {
+    const { puzzle, grade } = generateGraded(seed, { size, maxTier: cap });
+    const input = deduceInput(puzzle, terminalCells(puzzle));
+    check(
+      deduce(input, grade.maxTier).solved,
+      `${size}×${size}/${seed}: solvable at the tier it was graded (T${grade.maxTier})`,
+    );
+    if (grade.maxTier > 1) {
+      const lower = (grade.maxTier - 1) as Tier;
+      check(
+        !deduce(input, lower).solved,
+        `${size}×${size}/${seed}: T${grade.maxTier} was needed — T${lower} doesn't finish it`,
+      );
+    }
+  }
+
+  // A spread of sizes and seeds, so between them the harder tiers get exercised.
+  for (const [seed, size] of [
+    [1000, 5],
+    [7919, 5],
+    [1000, 6],
+    [15838, 6],
+    [1000, 7],
+  ] as [number, number][]) {
+    tierIsRequired(seed, size, 4);
+  }
+
+  // Hand-built: a 4×4 that falls to counting alone. Column 0 owes everything,
+  // column 3 owes nothing, so T1 settles both without any geometry.
+  {
+    const path: Coord[] = [
+      { r: 0, c: 0 },
+      { r: 1, c: 0 },
+      { r: 2, c: 0 },
+      { r: 3, c: 0 },
+      { r: 3, c: 1 },
+      { r: 3, c: 2 },
+    ];
+    const entry = { r: 0, c: 0, dir: 0 } as const;
+    const exit = { r: 3, c: 2, dir: 2 } as const;
+    const solution = piecesFromPath(path, entry, exit, 4);
+    const rows = [1, 1, 1, 3];
+    const cols = [4, 1, 1, 0];
+    const p: Puzzle = {
+      size: 4, rows, cols, entry, exit, solution, path,
+      fixed: [{ r: 0, c: 0 }, { r: 3, c: 2 }], seed: 0,
+    };
+    const res = deduce(deduceInput(p), 1);
+    check(res.solved, "a counting-only board falls to T1 alone");
+    check(res.grade.maxTier === 1, "and is graded T1");
+  }
+
+  // Contradictory clues are reported, not solved and not thrown.
+  {
+    const p = puzzleForLevel(1);
+    const broken = deduceInput(p);
+    const bad = deduce(
+      { ...broken, rows: p.rows.map((v, i) => (i === 0 ? p.size + 1 : v)) },
+      4,
+    );
+    check(bad.contradiction, "a clue larger than its line is a contradiction");
+    check(!bad.solved, "and such a board is never reported solved");
   }
 }
 

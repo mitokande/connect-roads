@@ -68,7 +68,7 @@ export function LevelsScreen({
                     ]}
                   >
                     {locked ? (
-                      <Ionicons name="lock-closed" size={15} color={theme.markAuto} />
+                      <Ionicons name="lock-closed" size={15} color={theme.locked} />
                     ) : (
                       <>
                         <Text style={[styles.tileText, cleared && { color: "#FFFFFF" }]}>

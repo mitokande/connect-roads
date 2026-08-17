@@ -29,15 +29,14 @@ export type CellProps = {
   /** Draw `piece` dimmed — the shape hint. */
   ghost?: boolean;
   claimed: boolean;
+  /** Crossed out — always by the player; the board never crosses anything out. */
   blocked: boolean;
-  /** Crossed out by the board rather than by the player. */
-  auto: boolean;
   /** The moving end of the route, or the cell a hint is pointing at. */
   glow?: boolean;
   wrong?: boolean;
 };
 
-function CellView({ size, r, c, piece, ghost, claimed, blocked, auto, glow, wrong }: CellProps) {
+function CellView({ size, r, c, piece, ghost, claimed, blocked, glow, wrong }: CellProps) {
   return (
     <View
       pointerEvents="none"
@@ -62,8 +61,8 @@ function CellView({ size, r, c, piece, ghost, claimed, blocked, auto, glow, wron
         <RoadPiece size={size} piece={piece} faded={ghost} />
       ) : claimed ? (
         <ClaimGlyph size={size} />
-      ) : blocked || auto ? (
-        <CrossGlyph size={size} color={auto ? theme.markAuto : theme.mark} />
+      ) : blocked ? (
+        <CrossGlyph size={size} />
       ) : null}
     </View>
   );
@@ -105,7 +104,7 @@ function ClaimGlyph({ size: s }: { size: number }) {
   );
 }
 
-function CrossGlyph({ size: s, color }: { size: number; color: string }) {
+function CrossGlyph({ size: s }: { size: number }) {
   const a = s * 0.3;
   const b = s * 0.7;
   const w = Math.max(2.5, s * 0.1);
@@ -113,7 +112,7 @@ function CrossGlyph({ size: s, color }: { size: number; color: string }) {
     <Svg width={s} height={s}>
       <Path
         d={`M ${a},${a} L ${b},${b} M ${b},${a} L ${a},${b}`}
-        stroke={color}
+        stroke={theme.mark}
         strokeWidth={w}
         strokeLinecap="round"
       />

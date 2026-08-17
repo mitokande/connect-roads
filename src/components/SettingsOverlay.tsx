@@ -5,7 +5,7 @@ import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { haptics } from "../haptics";
 import { sound } from "../sound";
 import type { Progress } from "../state/useGame";
-import { radius, shadow, theme } from "../theme";
+import { overlayLift, radius, shadow, theme } from "../theme";
 import { Button } from "./Button";
 
 export function SettingsOverlay({
@@ -114,6 +114,7 @@ function Row({
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
+    ...overlayLift,
     backgroundColor: "rgba(34,54,75,0.4)",
     alignItems: "center",
     justifyContent: "center",

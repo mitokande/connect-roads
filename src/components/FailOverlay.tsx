@@ -7,7 +7,7 @@ import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import type { Game } from "../state/useGame";
-import { radius, shadow, theme } from "../theme";
+import { overlayLift, radius, shadow, theme } from "../theme";
 import { Button } from "./Button";
 
 export function FailOverlay({ game, onExit }: { game: Game; onExit: () => void }) {
@@ -34,6 +34,7 @@ export function FailOverlay({ game, onExit }: { game: Game; onExit: () => void }
 const styles = StyleSheet.create({
   wrap: {
     ...StyleSheet.absoluteFillObject,
+    ...overlayLift,
     justifyContent: "flex-end",
     padding: 16,
   },
