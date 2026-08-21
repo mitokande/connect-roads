@@ -34,9 +34,16 @@ export type CellProps = {
   /** The moving end of the route, or the cell a hint is pointing at. */
   glow?: boolean;
   wrong?: boolean;
+  /**
+   * Pushed into the background. Only the win uses it: once the board is over,
+   * the route is the only thing worth reading and the player's own notes have
+   * done their job, so they fade back rather than being cleared — the board
+   * they solved is still there to look at, just no longer competing.
+   */
+  dim?: boolean;
 };
 
-function CellView({ size, r, c, piece, ghost, claimed, blocked, glow, wrong }: CellProps) {
+function CellView({ size, r, c, piece, ghost, claimed, blocked, glow, wrong, dim }: CellProps) {
   return (
     <View
       pointerEvents="none"
@@ -47,6 +54,7 @@ function CellView({ size, r, c, piece, ghost, claimed, blocked, glow, wrong }: C
           height: size,
           left: c * size,
           top: r * size,
+          opacity: dim ? 0.3 : 1,
           backgroundColor: wrong
             ? "#FDE4E1"
             : glow

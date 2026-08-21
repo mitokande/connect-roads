@@ -310,6 +310,38 @@ still readable. It is inset from the border because the terminal tab sits on tha
 edge, it takes its width from `ROAD_W` so it can't drift from the lane it is
 painted on, and it goes once the car is away — there is nothing left to start.
 
+**The win is built around the board, not over it.** It used to be a modal card
+with the score on it, which covered the one thing the player had just spent
+minutes making. Now the finished route is *lit*, and lit **to the road's own
+shape**: `LitRoad` strokes `roadCentreline` — the very line the tarmac, kerbs,
+dashes and verges are all offsets of — in two passes a little wider than
+`ROAD_SPAN`, so the glow bends through every corner exactly as the road does and
+never mentions the square it runs through. Filling whole cells was the first try
+and it lit the *grid*: a staircase of blocks with the road somewhere inside it,
+which is the one reading the board spends the whole game teaching the player to
+stop making. Sharing the geometry rather than re-deriving it is the point — a
+second copy of "straight, curve or stub" is a second chance to disagree with the
+road it is hugging. It pulses, every cell off the route and every clue fades back
+to 0.3, and it starts with the car and stays.
+
+The rest of the celebration is dropped into slots `GameScreen` already has
+(`WinCelebration.tsx`): the congratulation replaces the instruction banner — a
+gold word arched over the board, each letter its own `Text` so the text engine
+still measures the spacing, rotated and dropped on a circle. There is no outline
+on it: a dark ring made the word read as a sticker pasted over the screen, and it
+was the only black on a page that is otherwise paper and ink. The letters carry
+themselves — heavy, in the one warm colour the game keeps for winning, lifted off
+the pale board by a wide blurred glow of their own colour. The buttons replace
+the hint button,
+one big **Level _n+1_** between a replay and a levels icon. Only the confetti is
+an overlay, because it belongs to the whole screen; it loops, since a single
+burst ends in a bare screen and reads as the celebration breaking rather than
+finishing. The title is absolutely positioned inside the banner's 62pt box and
+allowed to overflow it: laid out in flow it would re-centre the stage and jog the
+board down at the exact moment the player is looking at it. Nothing restates the
+score — hearts are already along the top and the hint stock is already on the
+button that spends it.
+
 ## Input
 
 One `PanResponder` on the grid, not per-cell pressables — three of the four

@@ -140,6 +140,43 @@ function curveGeometry(s: number, piece: Piece, dirs: Dir[]): Geometry {
   };
 }
 
+/**
+ * Which of the three shapes this piece is, and the geometry that draws it.
+ *
+ * Split out of `RoadPiece` because the win lights the road by *tracing* it, and
+ * a second copy of "is this a straight, a curve or a stub" would be a second
+ * chance to disagree with the road it is supposed to be hugging.
+ */
+function geometryFor(s: number, piece: Piece) {
+  if (!piece) return null;
+  const dirs = DIRS.filter((d) => hasDir(piece, d));
+  const kind =
+    dirs.length === 1 ? "stub" : (dirs[0] + 2) % 4 === dirs[1] ? "straight" : "curve";
+  const geo =
+    kind === "stub"
+      ? stubGeometry(s, dirs[0])
+      : kind === "straight"
+        ? straightGeometry(s, hasDir(piece, 1))
+        : curveGeometry(s, piece, dirs);
+  return { kind, geo };
+}
+
+/**
+ * The road's centreline through a cell — the line the tarmac, the kerbs, the
+ * dashes and the verges are all offsets of. Anything that wants to follow the
+ * *shape* of the road rather than the square it sits in strokes this.
+ */
+export function roadCentreline(s: number, piece: Piece): string | null {
+  return geometryFor(s, piece)?.geo.path(0) ?? null;
+}
+
+/**
+ * How much of a cell the road actually covers, verges included. Exported for the
+ * same reason as `ROAD_W`: a halo drawn around the road has to be measured from
+ * the road, not from a number that happens to look right today.
+ */
+export const ROAD_SPAN = ROAD_W + VERGE_W * 2;
+
 export type RoadPieceProps = {
   /** Cell size in px. */
   size: number;
@@ -150,17 +187,9 @@ export type RoadPieceProps = {
 };
 
 export function RoadPiece({ size: s, piece, faded }: RoadPieceProps) {
-  if (!piece) return null;
-
-  const dirs = DIRS.filter((d) => hasDir(piece, d));
-  const kind =
-    dirs.length === 1 ? "stub" : (dirs[0] + 2) % 4 === dirs[1] ? "straight" : "curve";
-  const geo =
-    kind === "stub"
-      ? stubGeometry(s, dirs[0])
-      : kind === "straight"
-        ? straightGeometry(s, hasDir(piece, 1))
-        : curveGeometry(s, piece, dirs);
+  const shape = geometryFor(s, piece);
+  if (!shape) return null;
+  const { kind, geo } = shape;
 
   const bushAt =
     kind === "stub" ? STUB_BUSHES : kind === "straight" ? STRAIGHT_BUSHES : CURVE_BUSHES;

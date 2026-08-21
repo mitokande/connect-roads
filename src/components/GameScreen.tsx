@@ -23,7 +23,7 @@ import { IconButton } from "./Button";
 import { FailOverlay } from "./FailOverlay";
 import { HelpOverlay } from "./HelpOverlay";
 import { TutorialCoach } from "./TutorialCoach";
-import { WinOverlay } from "./WinOverlay";
+import { WinActions, WinConfetti, WinTitle } from "./WinCelebration";
 
 export function GameScreen({
   game,
@@ -94,7 +94,9 @@ export function GameScreen({
 
       <View style={styles.stage}>
         <View style={[styles.bannerWrap, { width: boardWidth }]}>
-          {game.level === 1 && !game.progress.tutorialSeen && !game.failed ? (
+          {game.celebrate ? (
+            <WinTitle game={game} />
+          ) : game.level === 1 && !game.progress.tutorialSeen && !game.failed ? (
             <TutorialCoach
               phase={game.phase}
               found={found}
@@ -145,22 +147,23 @@ export function GameScreen({
         </Animated.View>
 
         <View style={styles.tools}>
-          <IconButton
-            size={62}
-            badge={game.progress.hints}
-            disabled={game.progress.hints <= 0 || game.failed || game.phase === "won"}
-            onPress={() => game.useHint()}
-          >
-            <Ionicons name="bulb" size={30} color={theme.gold} />
-          </IconButton>
+          {game.celebrate ? (
+            <WinActions game={game} onExit={onExit} />
+          ) : (
+            <IconButton
+              size={62}
+              badge={game.progress.hints}
+              disabled={game.progress.hints <= 0 || game.failed || game.phase === "won"}
+              onPress={() => game.useHint()}
+            >
+              <Ionicons name="bulb" size={30} color={theme.gold} />
+            </IconButton>
+          )}
         </View>
       </View>
 
-      {game.celebrate ? (
-        <WinOverlay game={game} onExit={onExit} />
-      ) : game.failed ? (
-        <FailOverlay game={game} onExit={onExit} />
-      ) : null}
+      {game.celebrate ? <WinConfetti /> : null}
+      {game.failed ? <FailOverlay game={game} onExit={onExit} /> : null}
 
       {help ? <HelpOverlay onClose={() => setHelp(false)} /> : null}
     </View>

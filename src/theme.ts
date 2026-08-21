@@ -50,6 +50,13 @@ export const theme = {
   cellRoad: "#DFE7F0",
   /** A cell the finger is over. */
   cellHot: "#FFF6DA",
+  /**
+   * The glow laid under the finished road when the board is won — traced to the
+   * road's own shape, never to the squares it runs through. It is the warm tint
+   * of `cellHot` pushed a stop further: the same statement ("the road's business
+   * is here") made loudly, once, at the end.
+   */
+  roadLit: "#FFD264",
 
   /** Tarmac, its darker kerb line, and the dashes down the middle. */
   asphalt: "#3B4753",

@@ -21,9 +21,17 @@
 // before showing anything would put ~250ms of lag on the single most repeated
 // action in the game; taking it back is invisible by comparison.
 
-import React, { useMemo, useRef } from "react";
-import { PanResponder, StyleSheet, Text, View, type ViewStyle } from "react-native";
-import Svg, { Polygon, Rect } from "react-native-svg";
+import React, { useEffect, useMemo, useRef } from "react";
+import {
+  Animated,
+  Easing,
+  PanResponder,
+  StyleSheet,
+  Text,
+  View,
+  type ViewStyle,
+} from "react-native";
+import Svg, { G, Path, Polygon, Rect } from "react-native-svg";
 
 import {
   connectStep,
@@ -43,7 +51,7 @@ import { key, same, type Coord, type Dir, type Piece, type Puzzle } from "../gam
 import { radius, theme } from "../theme";
 import { CarRide } from "./CarRide";
 import { Cell } from "./Cell";
-import { ROAD_W } from "./RoadPiece";
+import { ROAD_SPAN, ROAD_W, roadCentreline } from "./RoadPiece";
 
 const DOUBLE_TAP_MS = 280;
 
@@ -221,6 +229,11 @@ export function Board(props: BoardProps) {
 
   // --- what to draw ---------------------------------------------------------
   const drawn = useMemo(() => routePieces(puzzle, route), [puzzle, route]);
+  // A won board is read for one thing only, so it is lit for one thing only:
+  // the finished route glows and everything the player wrote around it — their
+  // ✕ notes, the clues they were counting — steps back out of its way.
+  const celebrating = phase === "won";
+  const onRoute = useMemo(() => new Set(route.map((c) => key(c.r, c.c))), [route]);
   // The lit cell is where the next road goes: the moving end of the drawn route,
   // or — before there is one — the entry, the only place a road may start. It is
   // lit from the first moment of the board, because that is when laying road
@@ -256,6 +269,7 @@ export function Board(props: BoardProps) {
           blocked={mark === MARK_BLOCKED}
           glow={(head !== null && head.r === r && head.c === c) || (!!hint && hint.r === r && hint.c === c)}
           wrong={!!wrong && wrong.r === r && wrong.c === c}
+          dim={celebrating && !onRoute.has(k)}
         />,
       );
     }
@@ -280,6 +294,7 @@ export function Board(props: BoardProps) {
             done={colFound(puzzle, marks, c) >= clue}
             warn={lineOverCrossed(puzzle, marks, c, true)}
             size={cell}
+            dim={celebrating}
           />
         ))}
       </View>
@@ -294,6 +309,7 @@ export function Board(props: BoardProps) {
               done={rowFound(puzzle, marks, r) >= clue}
               warn={lineOverCrossed(puzzle, marks, r, false)}
               size={cell}
+              dim={celebrating}
               column
             />
           ))}
@@ -302,6 +318,12 @@ export function Board(props: BoardProps) {
         <View style={[styles.frame, { borderWidth: frame, borderRadius: radius.md }]}>
           <View style={{ width: grid, height: grid }} {...responder.panHandlers}>
             {lines}
+            {/* Under the cells, so the road's own tarmac and verges stay on top
+                of it and the light reads as coming from around the road rather
+                than painted over it. */}
+            {celebrating ? (
+              <LitRoad route={route} pieces={drawn} cell={cell} grid={grid} />
+            ) : null}
             {cells}
             <Terminal t={puzzle.entry} cell={cell} n={n} inward />
             <Terminal t={puzzle.exit} cell={cell} n={n} />
@@ -331,6 +353,7 @@ function Clue({
   done,
   warn,
   size,
+  dim,
   column,
 }: {
   value: number;
@@ -338,10 +361,12 @@ function Clue({
   /** The player has ruled out too much of this line for the clue to be met. */
   warn?: boolean;
   size: number;
+  /** The board is won — there is nothing left to count. */
+  dim?: boolean;
   column?: boolean;
 }) {
   return (
-    <View style={[column ? { height: size } : { width: size }, styles.clue]}>
+    <View style={[column ? { height: size } : { width: size }, styles.clue, dim && styles.dim]}>
       <Text
         style={{
           fontSize: Math.min(22, Math.max(13, size * 0.42)),
@@ -496,8 +521,101 @@ function FinishFlag({ t, cell }: { t: { r: number; c: number }; cell: number }) 
   );
 }
 
+/**
+ * The finished road, lit from underneath — and lit to its own shape.
+ *
+ * It strokes `roadCentreline`, the very line the tarmac and the verges are drawn
+ * as offsets of, so the light bends through every corner exactly as the road
+ * does and the cell it sits in is never mentioned. Filling whole squares was the
+ * first try and it lit the *grid*: a staircase of blocks with the road somewhere
+ * inside it, which is the one reading the board spends the whole game teaching
+ * the player to stop making.
+ *
+ * Two passes, both wider than the road's own span, give the falloff a single
+ * flat band can't: a faint wide one and a solid inner one, so the glow reads as
+ * spilling off the verges rather than as a second road painted under the first.
+ * Both stay inside the cell, and the caps are butt for the same reason the road's
+ * are — a round one bulges past the edge and prints a lip where two cells meet.
+ *
+ * The pulse is the only thing on the board that ever moves by itself, which is
+ * the point: it starts with the car and says the board is over.
+ */
+const HALO = [
+  { span: 0.98, opacity: 0.38 },
+  { span: ROAD_SPAN + 0.12, opacity: 1 },
+];
+
+function LitRoad({
+  route,
+  pieces,
+  cell,
+  grid,
+}: {
+  route: Coord[];
+  /** The piece drawn in each route cell — the road whose shape is being traced. */
+  pieces: Map<number, Piece>;
+  cell: number;
+  grid: number;
+}) {
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    pulse.setValue(0);
+    const beat = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 780,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: 780,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    beat.start();
+    return () => beat.stop();
+  }, [pulse]);
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        StyleSheet.absoluteFill,
+        { opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 1] }) },
+      ]}
+    >
+      <Svg width={grid} height={grid}>
+        {HALO.map((band, i) =>
+          route.map((c) => {
+            const d = roadCentreline(cell, pieces.get(key(c.r, c.c)) ?? 0);
+            if (!d) return null;
+            return (
+              <G key={`${i}-${c.r}-${c.c}`} x={c.c * cell} y={c.r * cell}>
+                <Path
+                  d={d}
+                  stroke={theme.roadLit}
+                  strokeWidth={band.span * cell}
+                  strokeOpacity={band.opacity}
+                  strokeLinecap="butt"
+                  fill="none"
+                />
+              </G>
+            );
+          }),
+        )}
+      </Svg>
+    </Animated.View>
+  );
+}
+
 const styles = StyleSheet.create({
   row: { flexDirection: "row" },
+  dim: { opacity: 0.3 },
   clue: { alignItems: "center", justifyContent: "center" },
   frame: {
     borderColor: theme.frame,
