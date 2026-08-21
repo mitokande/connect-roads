@@ -177,12 +177,18 @@ export type GenerateOptions = {
    */
   maxTier?: Tier;
   /**
-   * Fewest lines with an *extreme* clue (0, n, or n−1) the board may open with.
+   * Fewest lines with an *extreme* clue (1, n−1, or n) the board may open with.
    *
    * These are where line counting bites, so they are the deduction's footholds.
    * The old bank had them collapse exactly where they were needed most — 4.0 of
    * 8 lines on a 4×4 but only 2.4 of 16 on an 8×8, a quarter of the density on
    * the boards that are already hardest.
+   *
+   * **0 is not on that list any more, because a 0 clue can no longer happen.**
+   * Every row and column carries road (`touchesEveryLine`), so the cheapest
+   * foothold there is — a line the player can sweep without reading anything
+   * else — is gone by construction, and 1 takes its place: a line owing exactly
+   * one square is the tightest clue the board can now print.
    */
   minExtremeLines?: number;
 };
@@ -211,12 +217,31 @@ const defaultExtremeLines = (size: number) => Math.max(2, Math.round(size * 2 * 
 const T5_ESCALATION_REACH = 24;
 
 /**
+ * Does the road reach every row and every column?
+ *
+ * The rule the bank is built on: **no clue is ever 0.** See `shapeIsPlayable`
+ * for why, and `deduce.ts` — nothing in the rule engine ever needed a 0, it is
+ * simply the easiest case of "this line is settled, cross the rest out".
+ */
+export const touchesEveryLine = (rows: number[], cols: number[]): boolean =>
+  rows.every((v) => v > 0) && cols.every((v) => v > 0);
+
+/**
+ * A clue at the ends of its range — the deduction's footholds.
+ *
+ * `n` and `n−1` fill a line almost completely; `1` empties it almost completely.
+ * 0 used to head this list and no longer occurs at all: {@link touchesEveryLine}.
+ */
+export const isExtreme = (v: number, size: number): boolean =>
+  v === 1 || v === size - 1 || v === size;
+
+/**
  * Is this walk worth playing, before the expensive gates get a look?
  *
- * Three cheap shape tests, all of them things the old generator left to chance:
- * enough extreme clues to give the deduction a way in, enough corners that the
- * route reads as a route, and not so much of the road lying alongside itself that
- * the board turns to mush.
+ * Four cheap shape tests, all of them things the old generator left to chance:
+ * no empty line, enough extreme clues to give the deduction a way in, enough
+ * corners that the route reads as a route, and not so much of the road lying
+ * alongside itself that the board turns to mush.
  */
 function shapeIsPlayable(
   path: Coord[],
@@ -225,9 +250,17 @@ function shapeIsPlayable(
   size: number,
   minExtreme: number,
 ): boolean {
+  // **No line may be empty.** A 0 clue is a row or column the player rules out
+  // in one sweep without looking at anything else — it is a free strip of grid,
+  // and on the bigger boards two or three of them turned a quarter of the puzzle
+  // into filling in blanks. Every line now carries road, so every clue is a
+  // number the player has to place rather than a line to cross off, and the grid
+  // the deduction runs on is the whole grid.
+  if (!touchesEveryLine(rows, cols)) return false;
+
   let extreme = 0;
-  for (const v of rows) if (v === 0 || v === size || v === size - 1) extreme++;
-  for (const v of cols) if (v === 0 || v === size || v === size - 1) extreme++;
+  for (const v of rows) if (isExtreme(v, size)) extreme++;
+  for (const v of cols) if (isExtreme(v, size)) extreme++;
   if (extreme < minExtreme) return false;
 
   // Corners. A route of mostly straights is a route with nothing to work out.

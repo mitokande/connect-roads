@@ -187,8 +187,9 @@ gates is the design**:
    allowed to finish as soon as it can produces a boring L, and length is the
    puzzle's whole texture.
 3. Read the clues off the finished path, and bin the walk unless its shape is
-   worth playing (`shapeIsPlayable`: enough extreme clues to give the deduction a
-   way in, enough corners, not too much road lying alongside itself).
+   worth playing (`shapeIsPlayable`: **no empty row or column**, enough extreme
+   clues to give the deduction a way in, enough corners, not too much road lying
+   alongside itself).
 4. **Is it deducible with only the two terminals showing?** Ask `deduce.ts`, and
    bin the walk if a person could not reason it out.
 5. **Reveal pieces until the route's shape is unique** — aimed, so each reveal
@@ -252,8 +253,23 @@ the easy ones are far commoner, so taking the first acceptable candidate fills t
 whole ladder with T1/T2 boards. A first cut of this script did exactly that — every
 band came out T1/T2 with nothing above it.
 
+**No clue is ever 0** (`touchesEveryLine`). The road reaches every row and every
+column, so there is no line the player crosses off in one sweep without reading
+anything else. A 0 is the one clue that resolves a whole strip of grid for free,
+and on the big boards two or three of them turned a quarter of the puzzle into
+filling in blanks before the deduction proper began — the grid the player is
+given and the grid they actually have to work out were not the same grid. Now
+every clue is a number to place. It costs surprisingly little: the walks already
+run at a 52–72% fill, and one that misses a line entirely is usually the sort of
+short cornered-off route the shape tests were binning anyway.
+
+The knock-on is that **1 joins the footholds and 0 leaves them** (`isExtreme`).
+The list is what it always was — the clues at the ends of the range, where
+counting bites — but the bottom end is now a line owing exactly one square
+rather than none.
+
 **The difficulty dial is the foothold floor**, and it is adaptive. Extreme clues
-(0, _n_, _n−1_) are where counting bites, so *withholding* them is what forces the
+(1, _n−1_, _n_) are where counting bites, so *withholding* them is what forces the
 harder rules; a band opens generous and tightens. It has to adapt because extreme
 clues get rarer as boards grow — 4.0 of 8 lines on a 4×4 but 2.4 of 16 on an 8×8 —
 so one fixed fraction is either trivial small or impossible large. Asking 35% of an
@@ -477,7 +493,7 @@ npx expo export --platform android   bundle check
 ```
 
 `npm test` asserts, for every one of the 120 shipped boards: clues match the
-path, the path is a genuine self-avoiding walk, pieces face their neighbours,
+path, **no clue is 0**, the path is a genuine self-avoiding walk, pieces face their neighbours,
 only the terminals leave the grid, the solver finds **exactly one** solution and
 it is the intended one, the bank round-trips through the codec, and the play rules
 accept the solution's own moves while refusing jumps, restarts and unclaimed

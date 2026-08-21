@@ -51,7 +51,7 @@ const TRIES_PER_SLOT = 3;
 /**
  * The footholds knob, as a fraction of the board's lines.
  *
- * Extreme clues (0, n, n−1) are where counting bites, so *withholding* them is
+ * Extreme clues (1, n−1, n) are where counting bites, so *withholding* them is
  * what makes a board demand the harder rules. A band therefore opens generous and
  * tightens: early levels get plenty of ways in, late ones have to be worked out.
  * This is the main difficulty dial, and it is the one that was missing when every

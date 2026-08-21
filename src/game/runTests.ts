@@ -54,6 +54,7 @@ import {
   MAX_EXTRA_REVEALS,
   mulberry32,
   piecesFromPath,
+  touchesEveryLine,
 } from "./generator";
 import { LEVEL_BANK } from "./levelData";
 import {
@@ -107,6 +108,14 @@ function auditPuzzle(p: Puzzle, label: string) {
   }
   check(rows.every((v, i) => v === p.rows[i]), `${label}: row clues match the path`);
   check(cols.every((v, i) => v === p.cols[i]), `${label}: column clues match the path`);
+
+  // No line is empty. A 0 clue is a strip of grid the player crosses off without
+  // reading anything else, so the bank is built to never print one — see
+  // `touchesEveryLine` in the generator.
+  check(
+    touchesEveryLine(p.rows, p.cols),
+    `${label}: every row and column carries road (no 0 clue)`,
+  );
 
   // The path visits no cell twice and every step is a step.
   const seen = new Set<number>();
