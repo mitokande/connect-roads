@@ -136,6 +136,13 @@ empty". Nothing else on the grid crosses anything out, and no rule consults a
 settled line on the player's behalf either — the exemption that used to survive
 in `isUnknown` went with the marks, for the reasons above.
 
+The one exception is the last frame of a won board: finishing the route means
+every road square is claimed, so the squares still unmarked are empty *and the
+player has already proved it*. `crossOutRest` writes them in as the win is
+committed — no deduction is being done for anyone at that point, and the finished
+grid states the whole answer instead of trailing the squares that were never
+worth the tap.
+
 `lineOverCrossed` turns a clue red when the player has ruled out so much of a
 line that its count can no longer be met. Nothing is enforced — the notes stay
 wrong until the player says otherwise — but it catches a bad assumption before
@@ -313,7 +320,7 @@ painted on, and it goes once the car is away — there is nothing left to start.
 **The win is built around the board, not over it.** It used to be a modal card
 with the score on it, which covered the one thing the player had just spent
 minutes making. Now the finished route is *lit*, and lit **to the road's own
-shape**: `LitRoad` strokes `roadCentreline` — the very line the tarmac, kerbs,
+shape**: `LitRoad` traces `roadRun` — the very centreline the tarmac, kerbs,
 dashes and verges are all offsets of — in two passes a little wider than
 `ROAD_SPAN`, so the glow bends through every corner exactly as the road does and
 never mentions the square it runs through. Filling whole cells was the first try
@@ -321,8 +328,21 @@ and it lit the *grid*: a staircase of blocks with the road somewhere inside it,
 which is the one reading the board spends the whole game teaching the player to
 stop making. Sharing the geometry rather than re-deriving it is the point — a
 second copy of "straight, curve or stub" is a second chance to disagree with the
-road it is hugging. It pulses, every cell off the route and every clue fades back
-to 0.3, and it starts with the car and stays.
+road it is hugging.
+
+**And it grows, entry to exit**, because the road is a journey and a journey has
+a direction — the same one the convoy is about to take. That is one dash as long
+as the whole road with its offset wound from full to nothing, which is why the
+route is *one* path rather than one per cell: a dash pattern restarts at every
+subpath and every element, so `roadRun` hands back **relative** commands and
+`Geometry.step` exists to build them. It pays off twice — the cell-to-cell joins
+are tangent-continuous (a straight meets an edge square on, and so does a curve's
+end), so the glow has no seams at all, and the sweep costs two animated props a
+frame instead of two per cell. A dash offset is neither a transform nor an
+opacity, so that one runs on the JS thread; the pulse that takes over once the
+light has arrived is native, and so is the confetti. The light is quicker than
+the cars, so it gets there first and they follow it down a road already lit.
+Every cell off the route and every clue fades back to 0.3.
 
 The rest of the celebration is dropped into slots `GameScreen` already has
 (`WinCelebration.tsx`): the congratulation replaces the instruction banner — a

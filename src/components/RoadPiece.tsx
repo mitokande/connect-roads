@@ -24,7 +24,7 @@
 import React from "react";
 import Svg, { Circle, G, Path } from "react-native-svg";
 
-import { DIRS, hasDir, type Dir, type Piece } from "../game/types";
+import { bit, DIRS, hasDir, type Dir, type Piece } from "../game/types";
 import { theme } from "../theme";
 
 /**
@@ -69,6 +69,14 @@ function edgeMid(d: Dir, s: number): Point {
  */
 type Geometry = {
   path: (off: number) => string;
+  /**
+   * The same run as `path`, but as a *relative* command with no move in front of
+   * it — so runs from neighbouring cells can be strung into one continuous path
+   * without knowing where either cell sits on the grid. The win's growing glow
+   * needs that: a dash pattern restarts at every path element and every subpath,
+   * so a light that draws itself along the whole road has to be one of each.
+   */
+  step: (off: number) => string;
   at: (off: number, t: number) => Point;
 };
 
@@ -80,6 +88,7 @@ function straightGeometry(s: number, horizontal: boolean): Geometry {
         ? `M 0,${s / 2 + o} L ${s},${s / 2 + o}`
         : `M ${s / 2 + o},0 L ${s / 2 + o},${s}`;
     },
+    step: () => (horizontal ? `l ${s},0` : `l 0,${s}`),
     at: (off, t) => {
       const o = off * s;
       return horizontal ? [t * s, s / 2 + o] : [s / 2 + o, t * s];
@@ -98,6 +107,8 @@ function stubGeometry(s: number, d: Dir): Geometry {
         ? `M ${m[0]},${s / 2 + o} L ${s / 2},${s / 2 + o}`
         : `M ${s / 2 + o},${m[1]} L ${s / 2 + o},${s / 2}`;
     },
+    step: () =>
+      horizontal ? `l ${mid[0] - m[0]},0` : `l 0,${mid[1] - m[1]}`,
     at: (off, t) => {
       const o = off * s;
       const x = m[0] + (mid[0] - m[0]) * t;
@@ -119,18 +130,28 @@ function curveGeometry(s: number, piece: Piece, dirs: Dir[]): Geometry {
   while (sweep > Math.PI) sweep -= 2 * Math.PI;
   while (sweep < -Math.PI) sweep += 2 * Math.PI;
 
+  /** The arc at a given offset: where it starts, where it ends, and which way. */
+  const ends = (off: number) => {
+    const r = s / 2 + off * s;
+    // Slide each end along its edge so the offset arc still meets the border.
+    const k = 1 - (2 * r) / s;
+    const p1: Point = [ma[0] + (corner[0] - ma[0]) * k, ma[1] + (corner[1] - ma[1]) * k];
+    const p2: Point = [mb[0] + (corner[0] - mb[0]) * k, mb[1] + (corner[1] - mb[1]) * k];
+    // Which way round the corner: the sign of the cross product, in a y-down
+    // space, is exactly SVG's sweep flag.
+    const cross =
+      (p1[0] - corner[0]) * (p2[1] - corner[1]) - (p1[1] - corner[1]) * (p2[0] - corner[0]);
+    return { r, p1, p2, sweep: cross > 0 ? 1 : 0 };
+  };
+
   return {
     path: (off) => {
-      const r = s / 2 + off * s;
-      // Slide each end along its edge so the offset arc still meets the border.
-      const k = 1 - (2 * r) / s;
-      const p1: Point = [ma[0] + (corner[0] - ma[0]) * k, ma[1] + (corner[1] - ma[1]) * k];
-      const p2: Point = [mb[0] + (corner[0] - mb[0]) * k, mb[1] + (corner[1] - mb[1]) * k];
-      // Which way round the corner: the sign of the cross product, in a y-down
-      // space, is exactly SVG's sweep flag.
-      const cross =
-        (p1[0] - corner[0]) * (p2[1] - corner[1]) - (p1[1] - corner[1]) * (p2[0] - corner[0]);
-      return `M ${p1[0]},${p1[1]} A ${r},${r} 0 0 ${cross > 0 ? 1 : 0} ${p2[0]},${p2[1]}`;
+      const { r, p1, p2, sweep } = ends(off);
+      return `M ${p1[0]},${p1[1]} A ${r},${r} 0 0 ${sweep} ${p2[0]},${p2[1]}`;
+    },
+    step: (off) => {
+      const { r, p1, p2, sweep } = ends(off);
+      return `a ${r},${r} 0 0 ${sweep} ${p2[0] - p1[0]},${p2[1] - p1[1]}`;
     },
     at: (off, t) => {
       const r = s / 2 + off * s;
@@ -161,13 +182,42 @@ function geometryFor(s: number, piece: Piece) {
   return { kind, geo };
 }
 
+/** One cell of the road's centreline, taken in the direction of travel. */
+export type RoadRun = {
+  /** Where the road crosses into the cell, in cell-local px. */
+  start: Point;
+  /** How to draw onward from there — relative, so it can follow any current point. */
+  step: string;
+  /** How long that is in px, which is what a dash pattern has to be measured in. */
+  length: number;
+};
+
 /**
- * The road's centreline through a cell — the line the tarmac, the kerbs, the
- * dashes and the verges are all offsets of. Anything that wants to follow the
- * *shape* of the road rather than the square it sits in strokes this.
+ * The road's centreline through one cell — the line the tarmac, the kerbs, the
+ * dashes and the verges are all offsets of — from the edge the road arrives at
+ * to the edge it leaves by. Anything that wants to follow the *shape* of the
+ * road rather than the square it sits in traces this.
+ *
+ * In travel order, and relative, because the caller is stringing a whole route
+ * together: `piece` alone can't say which way round its two edges are used, and
+ * the road only has a start and a finish once you know which way the car goes.
  */
-export function roadCentreline(s: number, piece: Piece): string | null {
-  return geometryFor(s, piece)?.geo.path(0) ?? null;
+export function roadRun(s: number, from: Dir, to: Dir): RoadRun {
+  const a = edgeMid(from, s);
+  const b = edgeMid(to, s);
+  if ((from + 2) % 4 === to) {
+    // A straight is the line between the two edge midpoints, which is exactly
+    // `straightGeometry` at no offset — written out here only because a run has
+    // a direction and that geometry doesn't.
+    return { start: a, step: `l ${b[0] - a[0]},${b[1] - a[1]}`, length: s };
+  }
+  const mask = (bit(from) | bit(to)) as Piece;
+  return {
+    start: a,
+    step: curveGeometry(s, mask, [from, to]).step(0),
+    // A quarter of a circle of radius half a cell — see the header.
+    length: (Math.PI / 4) * s,
+  };
 }
 
 /**

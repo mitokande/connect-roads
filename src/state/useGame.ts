@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 
 import {
   connectComplete,
+  crossOutRest,
   deductionComplete,
   hintCell,
   initialMarks,
@@ -146,10 +147,17 @@ function refuse(state: GameState, cell: Coord): GameState {
   };
 }
 
-/** The route just drawn, and the win it may have completed. */
+/**
+ * The route just drawn, and the win it may have completed.
+ *
+ * Winning also crosses out whatever is left unmarked (`crossOutRest`). The board
+ * writes no ✕ of its own at any other moment — see the note there — but a
+ * finished route means the deduction is finished too, so the last empties are
+ * already proved and the grid may as well say so.
+ */
 function laid(state: GameState, route: Coord[]): GameState {
   if (connectComplete(state.puzzle, route)) {
-    return { ...state, route, phase: "won", riding: true };
+    return { ...state, route, marks: crossOutRest(state.marks), phase: "won", riding: true };
   }
   return { ...state, route };
 }
@@ -228,16 +236,12 @@ function reduce(state: GameState, action: Action): GameState {
       if (state.phase === "connect") {
         const cell = nextRouteCell(state.puzzle, state.route);
         if (!cell) return state;
-        const route = [...state.route, cell];
-        const done = connectComplete(state.puzzle, route);
-        return {
-          ...state,
-          route,
-          hint: cell,
-          hintsUsed: state.hintsUsed + 1,
-          phase: done ? "won" : state.phase,
-          riding: done ? true : state.riding,
-        };
+        // Through `laid` like every other way of finishing, so a hint that lays
+        // the last piece wins the board on exactly the same terms.
+        return laid(
+          { ...state, hint: cell, hintsUsed: state.hintsUsed + 1 },
+          [...state.route, cell],
+        );
       }
       const cell = hintCell(state.puzzle, state.marks);
       if (!cell) return state;

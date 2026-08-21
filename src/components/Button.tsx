@@ -24,7 +24,7 @@ const TONES = {
   ghost: { face: theme.panel, edge: theme.panelEdge, ink: theme.text },
 } as const;
 
-const DEPTH = 4;
+export const DEPTH = 4;
 
 export function Button({ label, onPress, tone = "primary", size = "md", disabled, style, icon }: ButtonProps) {
   const [down, setDown] = useState(false);

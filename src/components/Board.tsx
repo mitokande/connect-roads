@@ -31,7 +31,7 @@ import {
   View,
   type ViewStyle,
 } from "react-native";
-import Svg, { G, Path, Polygon, Rect } from "react-native-svg";
+import Svg, { Path, Polygon, Rect } from "react-native-svg";
 
 import {
   connectStep,
@@ -47,11 +47,19 @@ import {
   shownPiece,
   type Marks,
 } from "../game/board";
-import { key, same, type Coord, type Dir, type Piece, type Puzzle } from "../game/types";
+import {
+  dirBetween,
+  key,
+  same,
+  type Coord,
+  type Dir,
+  type Piece,
+  type Puzzle,
+} from "../game/types";
 import { radius, theme } from "../theme";
 import { CarRide } from "./CarRide";
 import { Cell } from "./Cell";
-import { ROAD_SPAN, ROAD_W, roadCentreline } from "./RoadPiece";
+import { ROAD_SPAN, ROAD_W, roadRun } from "./RoadPiece";
 
 const DOUBLE_TAP_MS = 280;
 
@@ -322,7 +330,7 @@ export function Board(props: BoardProps) {
                 of it and the light reads as coming from around the road rather
                 than painted over it. */}
             {celebrating ? (
-              <LitRoad route={route} pieces={drawn} cell={cell} grid={grid} />
+              <LitRoad puzzle={puzzle} route={route} cell={cell} grid={grid} />
             ) : null}
             {cells}
             <Terminal t={puzzle.entry} cell={cell} n={n} inward />
@@ -522,64 +530,123 @@ function FinishFlag({ t, cell }: { t: { r: number; c: number }; cell: number }) 
 }
 
 /**
- * The finished road, lit from underneath — and lit to its own shape.
+ * The finished road, lit from underneath — to its own shape, and from one end to
+ * the other.
  *
- * It strokes `roadCentreline`, the very line the tarmac and the verges are drawn
- * as offsets of, so the light bends through every corner exactly as the road
- * does and the cell it sits in is never mentioned. Filling whole squares was the
- * first try and it lit the *grid*: a staircase of blocks with the road somewhere
- * inside it, which is the one reading the board spends the whole game teaching
- * the player to stop making.
+ * **Shape.** It traces `roadRun`, the very centreline the tarmac and the verges
+ * are drawn as offsets of, so the light bends through every corner exactly as the
+ * road does and the square it runs through is never mentioned. Filling whole
+ * cells was the first try and it lit the *grid*: a staircase of blocks with the
+ * road somewhere inside it, which is the one reading the board spends the whole
+ * game teaching the player to stop making.
+ *
+ * **Growth.** The glow draws itself from the entry to the exit rather than
+ * arriving all at once, because the road is a journey and a journey has a
+ * direction — the same one the convoy is about to take. That is a dash the
+ * length of the whole road, with its offset wound from full to nothing.
+ *
+ * Which is why the route is *one* path rather than one per cell: a dash pattern
+ * restarts at every subpath and every element, so a light that runs the length
+ * of the road has to be a single unbroken one. `roadRun` hands back relative
+ * commands for exactly that reason. It pays off twice — the joins between cells
+ * are now tangent-continuous (a straight meets an edge square on, and so does a
+ * curve's end), so the glow has no seams in it at all, and the whole sweep costs
+ * two animated props a frame instead of two per cell.
  *
  * Two passes, both wider than the road's own span, give the falloff a single
  * flat band can't: a faint wide one and a solid inner one, so the glow reads as
  * spilling off the verges rather than as a second road painted under the first.
- * Both stay inside the cell, and the caps are butt for the same reason the road's
- * are — a round one bulges past the edge and prints a lip where two cells meet.
+ * Both stay inside the cell.
  *
- * The pulse is the only thing on the board that ever moves by itself, which is
- * the point: it starts with the car and says the board is over.
+ * Only once the light has arrived does the pulse take over — the one thing on
+ * the board that ever moves by itself, and it says the board is over.
  */
 const HALO = [
   { span: 0.98, opacity: 0.38 },
   { span: ROAD_SPAN + 0.12, opacity: 1 },
 ];
 
+/** How fast the light travels: one pace, clamped so no board drags or blinks. */
+const LIT_MS_PER_CELL = 45;
+const LIT_MIN_MS = 800;
+const LIT_MAX_MS = 1600;
+
+const AnimatedPath = Animated.createAnimatedComponent(Path);
+
 function LitRoad({
+  puzzle,
   route,
-  pieces,
   cell,
   grid,
 }: {
+  puzzle: Puzzle;
   route: Coord[];
-  /** The piece drawn in each route cell — the road whose shape is being traced. */
-  pieces: Map<number, Piece>;
   cell: number;
   grid: number;
 }) {
-  const pulse = useRef(new Animated.Value(0)).current;
+  // The whole road as one unbroken line, in the order the car will drive it.
+  const road = useMemo(() => {
+    if (route.length === 0) return null;
+    let d = "";
+    let length = 0;
+    for (let i = 0; i < route.length; i++) {
+      const c = route[i];
+      const back = i === 0 ? puzzle.entry.dir : dirBetween(c, route[i - 1]);
+      const fwd = i === route.length - 1 ? puzzle.exit.dir : dirBetween(c, route[i + 1]);
+      const run = roadRun(cell, back, fwd);
+      if (i === 0) d = `M ${c.c * cell + run.start[0]},${c.r * cell + run.start[1]}`;
+      d += ` ${run.step}`;
+      length += run.length;
+    }
+    return { d, length };
+  }, [puzzle, route, cell]);
+
+  const grow = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    pulse.setValue(0);
-    const beat = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: 780,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, {
-          toValue: 0,
-          duration: 780,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    beat.start();
-    return () => beat.stop();
-  }, [pulse]);
+    grow.setValue(0);
+    pulse.setValue(1);
+    let beat: Animated.CompositeAnimation | null = null;
+    // The dash offset is not a transform or an opacity, so this one runs on the
+    // JS thread — which is affordable at two paths and would not be at two a
+    // cell. The pulse that follows it is native, and so is the confetti.
+    const sweep = Animated.timing(grow, {
+      toValue: 1,
+      duration: Math.min(
+        LIT_MAX_MS,
+        Math.max(LIT_MIN_MS, (route.length || 1) * LIT_MS_PER_CELL),
+      ),
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false,
+    });
+    sweep.start(({ finished }) => {
+      if (!finished) return;
+      beat = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulse, {
+            toValue: 0,
+            duration: 780,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulse, {
+            toValue: 1,
+            duration: 780,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+      beat.start();
+    });
+    return () => {
+      sweep.stop();
+      beat?.stop();
+    };
+  }, [grow, pulse, route.length]);
+
+  if (!road) return null;
 
   return (
     <Animated.View
@@ -590,24 +657,24 @@ function LitRoad({
       ]}
     >
       <Svg width={grid} height={grid}>
-        {HALO.map((band, i) =>
-          route.map((c) => {
-            const d = roadCentreline(cell, pieces.get(key(c.r, c.c)) ?? 0);
-            if (!d) return null;
-            return (
-              <G key={`${i}-${c.r}-${c.c}`} x={c.c * cell} y={c.r * cell}>
-                <Path
-                  d={d}
-                  stroke={theme.roadLit}
-                  strokeWidth={band.span * cell}
-                  strokeOpacity={band.opacity}
-                  strokeLinecap="butt"
-                  fill="none"
-                />
-              </G>
-            );
-          }),
-        )}
+        {HALO.map((band, i) => (
+          <AnimatedPath
+            key={i}
+            d={road.d}
+            stroke={theme.roadLit}
+            strokeWidth={band.span * cell}
+            strokeOpacity={band.opacity}
+            strokeLinecap="butt"
+            // One dash as long as the road and one gap to match: wound fully
+            // back the road is all gap, wound to nothing it is all dash.
+            strokeDasharray={[road.length, road.length]}
+            strokeDashoffset={grow.interpolate({
+              inputRange: [0, 1],
+              outputRange: [road.length, 0],
+            })}
+            fill="none"
+          />
+        ))}
       </Svg>
     </Animated.View>
   );

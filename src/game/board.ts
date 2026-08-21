@@ -62,6 +62,25 @@ export const withMark = (marks: Marks, size: number, r: number, c: number, m: nu
   return next;
 };
 
+/**
+ * Every square still unmarked, crossed out — the board's one and only ✕ of its
+ * own, and it waits until the road is finished.
+ *
+ * Nothing crosses out for the player while there is anything left to work out:
+ * sweeping a settled line is the game's central deduction, and filling it in the
+ * moment the clue allows would do that deduction for them. A complete route ends
+ * the reasoning outright — every road square is claimed, so every square without
+ * a mark is empty and the player has already proved it. Writing it down is
+ * bookkeeping on a board nobody is thinking about any more, and it leaves the
+ * finished grid stating the whole answer rather than trailing the squares that
+ * were never worth the tap.
+ */
+export function crossOutRest(marks: Marks): Marks {
+  const next = marks.slice();
+  for (let i = 0; i < next.length; i++) if (next[i] === MARK_NONE) next[i] = MARK_BLOCKED;
+  return next;
+}
+
 export const isRoadCell = (puzzle: Puzzle, r: number, c: number): boolean =>
   puzzle.solution[r][c] !== 0;
 
