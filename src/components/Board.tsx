@@ -53,7 +53,6 @@ import {
   same,
   type Coord,
   type Dir,
-  type Piece,
   type Puzzle,
 } from "../game/types";
 import { radius, theme } from "../theme";
@@ -86,8 +85,6 @@ export type BoardProps = {
   phase: Phase;
   /** Width the board may occupy, gutters included. */
   width: number;
-  /** Cells to draw dimmed pieces on — the shape hint. */
-  ghosts?: Map<number, Piece>;
   hint?: Coord | null;
   wrong?: Coord | null;
   onTap: (cell: Coord) => void;
@@ -101,7 +98,7 @@ export type BoardProps = {
 };
 
 export function Board(props: BoardProps) {
-  const { puzzle, marks, route, phase, width, ghosts, hint, wrong, riding, onRideDone } = props;
+  const { puzzle, marks, route, phase, width, hint, wrong, riding, onRideDone } = props;
   const n = puzzle.size;
 
   const gutter = Math.max(22, Math.min(34, width * 0.085));
@@ -260,11 +257,10 @@ export function Board(props: BoardProps) {
       const k = key(r, c);
       const fixedPiece = shownPiece(puzzle, r, c);
       const laid = drawn.get(k) ?? null;
-      const ghost = ghosts?.get(k) ?? null;
       const mark = markAt(marks, n, r, c);
       // The printed clue outranks everything: it is the same piece the road
       // would draw anyway, and it stays whole while the road's end rests on it.
-      const piece = fixedPiece !== null ? fixedPiece : laid !== null ? laid : ghost;
+      const piece = fixedPiece !== null ? fixedPiece : laid;
       cells.push(
         <Cell
           key={k}
@@ -272,7 +268,6 @@ export function Board(props: BoardProps) {
           r={r}
           c={c}
           piece={piece}
-          ghost={piece !== null && laid === null && fixedPiece === null}
           claimed={piece === null && mark === MARK_ROAD}
           blocked={mark === MARK_BLOCKED}
           glow={(head !== null && head.r === r && head.c === c) || (!!hint && hint.r === r && hint.c === c)}

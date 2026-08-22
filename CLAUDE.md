@@ -115,10 +115,19 @@ board is always true**, so the road can trust the claimed set completely and
 `connectStep` only has to police adjacency and the printed pieces. That is also
 what makes drawing road mid-deduction sound rather than a way to cheat.
 
-Three hearts. Losing the last one sets `failed`, which locks input and shows the
-solution *dimmed underneath the player's own marks* (`ghosts` in `useGame`)
-rather than clearing the board — at that moment the only interesting question is
-"where did I go wrong", and a wiped grid answers it with nothing.
+Three hearts. Losing the last one sets `failed`, which locks input and leaves the
+board exactly as the player built it rather than clearing it — at that moment the
+only interesting question is "where did I go wrong", and a wiped grid answers it
+with nothing.
+
+**A loss never shows the answer.** It used to: the solution was drawn dimmed
+underneath the player's own marks (`ghosts` in `useGame`). That was the puzzle
+giving away the one thing it exists to withhold, and it made losing *profitable* —
+the cheapest route through a hard board was to spend three hearts on purpose, read
+the route off the grid, and press **Try again**. Nothing else in the game reveals a
+square the player hasn't earned: a refused claim reports that one square and no
+more, and a hint costs stock. The board can't be the exception. What is left on
+screen is the player's own reasoning, which is the actual evidence of the mistake.
 
 ### Every cross is the player's
 

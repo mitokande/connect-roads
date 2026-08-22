@@ -16,13 +16,22 @@
 // between them so that can't drift — a claim that is cheaper by one route would
 // make that route the only one worth using.
 //
-// **Losing the last heart doesn't wipe the board.** `failed` locks input and
-// shows the solution dimmed underneath what the player had worked out, because
-// the interesting question at that moment is *where did I go wrong*, and a
-// cleared grid answers it with nothing.
+// **Losing the last heart doesn't wipe the board, and doesn't give the answer
+// away either.** `failed` locks input and leaves the grid exactly as the player
+// built it — every claim, every cross, still there to look at. It used to draw
+// the solution dimmed underneath as well, and that was the puzzle handing over
+// the one thing it exists to withhold: a loss became a free look at the answer,
+// so the cheapest way past a hard board was to spend three hearts on purpose,
+// read the route off the grid, and hit *Try again*. Nothing else in the game
+// ever shows a square the player hasn't earned — a refused claim reports only
+// that one square, and a hint costs stock — so the board must not either.
+//
+// What's left is still worth the moment: the marks that lost the board are the
+// evidence of where the reasoning went wrong, and re-reading them against the
+// clues is the same act the puzzle was asking for all along.
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import {
   connectComplete,
@@ -43,7 +52,7 @@ import {
   type Marks,
 } from "../game/board";
 import { LEVEL_COUNT, puzzleForLevel } from "../game/levels";
-import { key, type Coord, type Piece, type Puzzle } from "../game/types";
+import { type Coord, type Puzzle } from "../game/types";
 
 export const MAX_HEARTS = 3;
 export const STARTING_HINTS = 5;
@@ -332,19 +341,12 @@ export function useGame() {
     return true;
   }, [patch]);
 
-  /** The solution, shown dimmed behind a failed board. */
-  const ghosts = useMemo(() => {
-    if (!state.failed) return undefined;
-    const out = new Map<number, Piece>();
-    for (const cell of state.puzzle.path) {
-      out.set(key(cell.r, cell.c), state.puzzle.solution[cell.r][cell.c]);
-    }
-    return out;
-  }, [state.failed, state.puzzle]);
+  // A failed board shows **nothing new** — see the note on `failed` at the top.
+  // The solution used to be derived here and drawn dimmed under the player's own
+  // marks; it isn't any more, and nothing is left that could draw it.
 
   return {
     ...state,
-    ghosts,
     progress,
     loaded,
     start,

@@ -127,7 +127,6 @@ export function GameScreen({
             route={game.route}
             phase={game.phase}
             width={boardWidth}
-            ghosts={game.ghosts}
             hint={game.hint}
             wrong={game.wrong}
             riding={game.riding}
@@ -202,7 +201,7 @@ function Banner({
   if (failed) {
     return (
       <Text style={[styles.banner, { color: theme.dangerDark }]}>
-        Out of hearts — the route is shown below
+        Out of hearts — your marks are still here
       </Text>
     );
   }

@@ -1,6 +1,8 @@
-// Out of hearts. Sits low on the screen on purpose: the board behind it is now
-// showing the real route dimmed under the player's own marks, and covering that
-// up to say "you lost" would throw away the only useful moment in a loss.
+// Out of hearts. Sits low on the screen on purpose: the board behind it still
+// holds every mark the player made, and covering that up to say "you lost" would
+// throw away the only useful thing left in a loss. What it must *not* do is show
+// the answer — see the note on `failed` in `useGame.ts`: a board that hands over
+// its solution on a loss makes losing the fastest way to win.
 
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
@@ -19,8 +21,8 @@ export function FailOverlay({ game, onExit }: { game: Game; onExit: () => void }
           <Text style={styles.title}>Out of hearts</Text>
         </View>
         <Text style={styles.body}>
-          The solution is on the board behind — compare it with your crosses, then take another run
-          at it.
+          Your marks are still on the board behind — read them back against the clues to find the
+          one that was wrong, then take another run at it.
         </Text>
         <View style={styles.row}>
           <Button label="Try again" onPress={game.retry} />

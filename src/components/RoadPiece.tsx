@@ -232,11 +232,9 @@ export type RoadPieceProps = {
   size: number;
   /** Edge mask: two bits for a whole piece, one for a half-laid stub. */
   piece: Piece;
-  /** Dim the whole thing — used for hints and for the solution peek. */
-  faded?: boolean;
 };
 
-export function RoadPiece({ size: s, piece, faded }: RoadPieceProps) {
+export function RoadPiece({ size: s, piece }: RoadPieceProps) {
   const shape = geometryFor(s, piece);
   if (!shape) return null;
   const { kind, geo } = shape;
@@ -247,7 +245,7 @@ export function RoadPiece({ size: s, piece, faded }: RoadPieceProps) {
 
   return (
     <Svg width={s} height={s} pointerEvents="none">
-      <G opacity={faded ? 0.35 : 1}>
+      <G>
         {[-VERGE_OFF, VERGE_OFF].map((off, i) => (
           <Path
             key={`verge${i}`}

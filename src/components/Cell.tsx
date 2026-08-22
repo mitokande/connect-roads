@@ -26,8 +26,6 @@ export type CellProps = {
   c: number;
   /** The piece to draw, if any: a fixed clue, or one the player has laid. */
   piece: Piece | null;
-  /** Draw `piece` dimmed — the shape hint. */
-  ghost?: boolean;
   claimed: boolean;
   /** Crossed out — always by the player; the board never crosses anything out. */
   blocked: boolean;
@@ -43,7 +41,7 @@ export type CellProps = {
   dim?: boolean;
 };
 
-function CellView({ size, r, c, piece, ghost, claimed, blocked, glow, wrong, dim }: CellProps) {
+function CellView({ size, r, c, piece, claimed, blocked, glow, wrong, dim }: CellProps) {
   return (
     <View
       pointerEvents="none"
@@ -66,7 +64,7 @@ function CellView({ size, r, c, piece, ghost, claimed, blocked, glow, wrong, dim
       ]}
     >
       {piece !== null ? (
-        <RoadPiece size={size} piece={piece} faded={ghost} />
+        <RoadPiece size={size} piece={piece} />
       ) : claimed ? (
         <ClaimGlyph size={size} />
       ) : blocked ? (
