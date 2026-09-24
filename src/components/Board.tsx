@@ -97,6 +97,8 @@ export type BoardProps = {
   onPave: (target: Coord) => void;
   riding?: boolean;
   onRideDone?: () => void;
+  /** Duration multiplier for the car ride; see `CarRide`. */
+  ridePace?: number;
   /**
    * Drawn over the whole board, gutters included, and never touchable — the
    * tutorial's hand. It is handed the board's own measurements so it can point
@@ -117,7 +119,7 @@ export type BoardGeometry = {
 };
 
 export function Board(props: BoardProps) {
-  const { puzzle, marks, route, phase, width, hint, wrong, riding, onRideDone } = props;
+  const { puzzle, marks, route, phase, width, hint, wrong, riding, onRideDone, ridePace } = props;
   const n = puzzle.size;
 
   const gutter = Math.max(24, Math.min(36, width * 0.088));
@@ -358,7 +360,7 @@ export function Board(props: BoardProps) {
                 are with no instruction. */}
             {riding || phase === "won" ? null : <StartLine t={puzzle.entry} cell={cell} />}
             <FinishFlag t={puzzle.exit} cell={cell} />
-            {riding ? <CarRide puzzle={puzzle} cell={cell} onDone={onRideDone} /> : null}
+            {riding ? <CarRide puzzle={puzzle} cell={cell} onDone={onRideDone} pace={ridePace} /> : null}
           </View>
           <Terminal t={puzzle.entry} cell={cell} n={n} frame={frame} inward />
           <Terminal t={puzzle.exit} cell={cell} n={n} frame={frame} />

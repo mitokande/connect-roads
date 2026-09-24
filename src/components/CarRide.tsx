@@ -111,10 +111,13 @@ export function CarRide({
   puzzle,
   cell,
   onDone,
+  pace = 1,
 }: {
   puzzle: Puzzle;
   cell: number;
   onDone?: () => void;
+  /** Scales the drive's duration — the tutorial runs it quicker than a level. */
+  pace?: number;
 }) {
   const ride = useRef(new Animated.Value(0)).current;
 
@@ -158,7 +161,7 @@ export function CarRide({
       toValue: end,
       // Scaled by `end` so the extra stretch is time the tail spends leaving,
       // not the leader driving faster to make up for it.
-      duration: Math.max(MIN_MS, puzzle.path.length * MS_PER_CELL) * end,
+      duration: Math.max(MIN_MS, puzzle.path.length * MS_PER_CELL) * end * pace,
       easing: Easing.inOut(Easing.ease),
       useNativeDriver: true,
     });

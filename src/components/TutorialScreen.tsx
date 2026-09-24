@@ -48,6 +48,12 @@ const LESSON_ID = 1000;
 const REST_MS = 1400;
 /** On a your-turn step, how long the player is left alone before a nudge. */
 const IDLE_MS = 4000;
+/** Pause after a step's goal is met before the next line appears. */
+const STEP_MS = 350;
+/** The same after the convoy has driven — the ride itself was the pause. */
+const DRIVE_MS = 450;
+/** Tutorial boards are tiny; a full-length ride here is mostly waiting. */
+const RIDE_PACE = 0.6;
 
 function openLesson(index: number): GameState {
   const puzzle = lessonPuzzle(index);
@@ -259,7 +265,7 @@ export function TutorialScreen({ onDone }: { onDone: () => void }) {
 
   useEffect(() => {
     if (!isDone(step.goal, game)) return;
-    const wait = step.goal.kind === "drive" ? 1700 : 650;
+    const wait = step.goal.kind === "drive" ? DRIVE_MS : STEP_MS;
     const t = setTimeout(advance, wait);
     return () => clearTimeout(t);
   }, [game, step, advance]);
@@ -376,6 +382,7 @@ export function TutorialScreen({ onDone }: { onDone: () => void }) {
               hint={target}
               wrong={game.wrong}
               riding={game.riding}
+              ridePace={RIDE_PACE}
               onRideDone={() => commit(reduce(live.current, { type: "RIDE_DONE" }))}
               onTap={(cell) => act({ type: "TAP", cell })}
               onClaim={(cell) => act({ type: "CLAIM", cell })}
