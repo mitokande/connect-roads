@@ -69,7 +69,13 @@ export type Progress = {
   hints: number;
   haptics: boolean;
   sound: boolean;
+  music: boolean;
   tutorialSeen: boolean;
+  /**
+   * Best result per cleared level: the hearts left standing when it was won.
+   * A record, not a rule — nothing reads it back into play.
+   */
+  stars: Record<number, number>;
 };
 
 const DEFAULT_PROGRESS: Progress = {
@@ -77,10 +83,13 @@ const DEFAULT_PROGRESS: Progress = {
   hints: STARTING_HINTS,
   haptics: true,
   sound: true,
+  music: true,
   tutorialSeen: false,
+  stars: {},
 };
 
-type GameState = {
+export type GameState = {
+  /** Which board this is. The tutorial's lessons use ids past the ladder. */
   level: number;
   puzzle: Puzzle;
   marks: Marks;
@@ -100,7 +109,7 @@ type GameState = {
   hintsUsed: number;
 };
 
-type Action =
+export type Action =
   | { type: "NEW"; level: number }
   | { type: "TAP"; cell: Coord }
   | { type: "CLAIM"; cell: Coord }
@@ -112,13 +121,21 @@ type Action =
   | { type: "CLEAR_FLASH" };
 
 function freshBoard(level: number): GameState {
-  const puzzle = puzzleForLevel(level);
+  return boardFor(puzzleForLevel(level), level);
+}
+
+/**
+ * A fresh board for any puzzle, not only a level's. `marks` lets the tutorial
+ * open a board part-solved; the phase is read off them like anywhere else.
+ */
+export function boardFor(puzzle: Puzzle, level: number, marks?: Marks): GameState {
+  const m = marks ?? initialMarks(puzzle);
   return {
     level,
     puzzle,
-    marks: initialMarks(puzzle),
+    marks: m,
     route: [],
-    phase: "deduce",
+    phase: deductionComplete(puzzle, m) ? "connect" : "deduce",
     hearts: MAX_HEARTS,
     failed: false,
     riding: false,
@@ -171,7 +188,12 @@ function laid(state: GameState, route: Coord[]): GameState {
   return { ...state, route };
 }
 
-function reduce(state: GameState, action: Action): GameState {
+/**
+ * The rules of a board in play. Exported for the tutorial, which runs its lessons
+ * through this very reducer — gated, but never re-implemented — so what it
+ * teaches can't drift from what the game does.
+ */
+export function reduce(state: GameState, action: Action): GameState {
   switch (action.type) {
     case "NEW":
       return freshBoard(action.level);
@@ -282,7 +304,7 @@ export function useGame() {
         if (!alive) return;
         if (raw) {
           const saved = JSON.parse(raw) as Partial<Progress>;
-          setProgress({ ...DEFAULT_PROGRESS, ...saved });
+          setProgress({ ...DEFAULT_PROGRESS, ...saved, stars: { ...(saved.stars ?? {}) } });
         }
         setLoaded(true);
       })
@@ -313,14 +335,21 @@ export function useGame() {
     if (!state.celebrate || awarded.current === state.level) return;
     awarded.current = state.level;
     const p = progressRef.current;
+    // The star record is kept on every clear, replays included — it only ever
+    // improves, and it pays nothing.
+    const best = Math.max(p.stars[state.level] ?? 0, state.hearts);
+    const stars = { ...p.stars, [state.level]: best };
     if (state.level === p.unlockedLevel && p.unlockedLevel < LEVEL_COUNT) {
       save({
         ...p,
+        stars,
         unlockedLevel: p.unlockedLevel + 1,
         hints: Math.min(HINT_CAP, p.hints + 1),
       });
+    } else if (best !== p.stars[state.level]) {
+      save({ ...p, stars });
     }
-  }, [state.celebrate, state.level, save]);
+  }, [state.celebrate, state.level, state.hearts, save]);
 
   // Flashes are transient — clear them so a later shake or hint re-triggers.
   useEffect(() => {

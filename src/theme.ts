@@ -1,107 +1,138 @@
-// Shared visual system — a cool paper-white workbench with one warm accent.
+// Shared visual system — a sunny toy-town diorama.
 //
-// Colour is assigned by function, not decoration:
-//   asphalt / verge the road itself, and nothing else
-//   accent (blue)   primary actions and instructions
-//   good (green)    a clue that is settled, and success
-//   danger (red)    hearts and mistakes
-//   mark            the ✕ glyph, and only ever the player's own
+// The board is a patch of lawn in a wooden tray, and everything the game draws
+// on it is something you could build in that tray: tarmac with painted lines,
+// a graded plot waiting for its road, a flag, a town. The screens around it are
+// sky and hills, so the board reads as the one object in a landscape rather than
+// as a widget on a page.
 //
-// The road is the only place greens and greys are allowed to be this saturated:
-// tarmac, its dashed centre line, and the grass verge that runs alongside it.
-// Everything else on the screen is paper and ink, so the route reads as the one
-// physical thing on the board.
+// Colour is still assigned by function, not decoration:
+//   asphalt / paint   the road itself, and nothing else
+//   lawn              an undecided square — the ground before anyone builds
+//   dirt              a claimed square: road is coming, its shape is not known
+//   accent (orange)   primary actions and the next thing to do
+//   good (green)      a clue that is settled, and success
+//   danger (red)      hearts and mistakes
+//   mark              the ✕ glyph, and only ever the player's own
 //
-// There is one ✕ weight, because there is one author. The board used to cross
-// out settled lines itself in a paler grey, which meant a player scanning the
-// grid had to work out which crosses were theirs before trusting any of them —
-// and it did the sweeping deduction for them anyway. Every ✕ is now the
-// player's, so `mark` needs no second weight to be read against.
+// There is one ✕ weight, because there is one author: the board never crosses
+// anything out on the player's behalf (see CLAUDE.md, "Every cross is the
+// player's"), so a scan of the grid never has to sort whose marks are whose.
 
 export const theme = {
-  bg: "#EEF2F7",
-  bgDeep: "#E2E9F2",
-  panel: "#FFFFFF",
-  panelLine: "#DCE4EC",
-  panelEdge: "#CBD6E2",
+  // --- the world around the board -------------------------------------------
+  skyTop: "#6EC3F5",
+  skyLow: "#CDEEFF",
+  sun: "#FFE27A",
+  cloud: "#FFFFFF",
+  hillFar: "#A6DA7E",
+  hillMid: "#86C95A",
+  hillNear: "#6CB846",
 
-  text: "#22364B",
-  textDim: "#6B7C8F",
+  /** The page colour behind scrolling content and under the scenery. */
+  bg: "#CDEEFF",
+  bgDeep: "#B4E1F7",
 
-  accent: "#2F8FEF",
-  accentDark: "#1D6FC4",
+  /** Cards, sheets, dialogs: warm paper, never pure white. */
+  panel: "#FFF9EE",
+  panelLine: "#F0E3CC",
+  panelEdge: "#E2CFAE",
+
+  text: "#2E2A45",
+  textDim: "#7A7392",
+  onDark: "#FFFFFF",
+
+  accent: "#FF8A3D",
+  accentDark: "#E0621A",
   onAccent: "#FFFFFF",
+  teal: "#27B9A8",
+  tealDark: "#16907F",
 
-  good: "#22C55E",
-  goodDark: "#16A34A",
-  danger: "#F4695F",
-  dangerDark: "#C93F35",
+  good: "#3DBE5B",
+  goodDark: "#279A43",
+  danger: "#FF5A5F",
+  dangerDark: "#D63B41",
 
-  gold: "#F5B324",
+  gold: "#FFC83D",
+  goldDark: "#E29B12",
 
-  // --- the board ---------------------------------------------------------
-  /** The chunky frame the grid sits inside. */
-  frame: "#2F4157",
-  /** Hairlines between cells. */
-  grid: "#D9E1EA",
-  /** An ordinary cell. */
-  cell: "#FFFFFF",
-  /** A cell known to carry road but not yet paved — a shade cooler. */
-  cellRoad: "#DFE7F0",
-  /** A cell the finger is over. */
-  cellHot: "#FFF6DA",
+  // --- the board --------------------------------------------------------------
+  /** The wooden tray the lawn sits in. */
+  wood: "#C98A55",
+  woodDark: "#9A5E33",
+  woodLight: "#E0A56F",
+  /** Mown lawn, in two stripes, so the grid reads without drawing a grid. */
+  lawnA: "#8DD05F",
+  lawnB: "#80C654",
+  lawnBlade: "#6EB344",
+  /** The moving end of the road, or where a hint landed. */
+  cellHot: "rgba(255,244,170,0.88)",
+  /** A refused claim. */
+  cellWrong: "rgba(255,110,110,0.92)",
+  /** A claimed plot: graded earth, pegged out. */
+  dirt: "#E8C68B",
+  dirtDark: "#C9A064",
+  dirtPebble: "#B98F55",
+  /** The little road-works sign on a claimed plot. */
+  sign: "#FF9F1C",
+  signEdge: "#2E2A45",
+
+  /** Tarmac, its darker edge, the painted lines. */
+  asphalt: "#4B5263",
+  asphaltEdge: "#353A48",
+  roadEdgeLine: "#F3F1EA",
+  roadLine: "#FFD23F",
+  /** The kerb stones either side of the tarmac. */
+  kerb: "#DAD5C8",
+  kerbDark: "#BDB6A6",
+  bush: "#4E9E37",
+  bushLight: "#63B847",
+  bloom: "#FF7AA8",
+
   /**
-   * The glow laid under the finished road when the board is won — traced to the
-   * road's own shape, never to the squares it runs through. It is the warm tint
-   * of `cellHot` pushed a stop further: the same statement ("the road's business
-   * is here") made loudly, once, at the end.
+   * The glow laid under the finished road when the board is won — traced to
+   * the road's own shape, never to the squares it runs through.
    */
-  roadLit: "#FFD264",
+  roadLit: "#FFE066",
 
-  /** Tarmac, its darker kerb line, and the dashes down the middle. */
-  asphalt: "#3B4753",
-  asphaltEdge: "#2B333C",
-  roadLine: "#FFFFFF",
-  /** The grass either side of the road, and what grows on it. */
-  verge: "#B4DD5F",
-  vergeDeep: "#9ACB43",
-  bush: "#71B233",
-  bloom: "#FFFFFF",
-
-  /** The car: body, the dark glass, and its lamps. */
-  car: "#F7C948",
-  carEdge: "#C99700",
-  carGlass: "#2F3B47",
-  carLamp: "#FFF2C2",
-  /**
-   * The convoy that drives a finished board, lead car first. Five of one colour
-   * would read as a copy-paste; five of a colour each reads as traffic, which is
-   * what a finished road is meant to be for.
-   */
+  /** The convoy that drives a finished board, lead car first. */
   fleet: [
-    { body: "#F7C948", edge: "#C99700" },
-    { body: "#F4695F", edge: "#C1382F" },
-    { body: "#5DA9F8", edge: "#2D74C0" },
-    { body: "#F2F5F8", edge: "#B4C2D0" },
-    { body: "#6FD08C", edge: "#3B9E5C" },
+    { body: "#FF5A5F", edge: "#C23A3F", roof: "#FF8C8F" },
+    { body: "#3FA7F5", edge: "#2379BD", roof: "#7CC4FA" },
+    { body: "#FFC83D", edge: "#CF9416", roof: "#FFDD85" },
+    { body: "#8E6CF0", edge: "#5E43B8", roof: "#B29BF6" },
+    { body: "#27B9A8", edge: "#15877A", roof: "#6ED6C9" },
   ],
+  carGlass: "#2B3346",
+  carLamp: "#FFF6C8",
+  tyre: "#23252E",
 
   /** The ✕ — the player's note that a square is empty. */
-  mark: "#7C8DA0",
-  /** Something not yet available: the padlock on a level still to be unlocked. */
-  locked: "#BFCAD7",
+  mark: "#FFFBF0",
+  markShadow: "#4F8F33",
+  locked: "#B8B2C8",
 
-  /** The unknown-piece "?" tile placed by a double tap. */
-  guess: "#2F8FEF",
-  guessFill: "#EAF3FE",
+  /** The town that grows on the empty squares of a won board. */
+  roofs: ["#FF6B6B", "#FF9F43", "#5F9DF7", "#A77BF3", "#F76FA8"],
+  walls: ["#FFF3E0", "#FFE8C8", "#F4F1FF", "#E8F6FF"],
+  trunk: "#8A5A36",
+  pond: "#5EC8F2",
+} as const;
+
+/** Font families. Custom fonts carry their weight in the name, not `fontWeight`. */
+export const font = {
+  regular: "Fredoka_400Regular",
+  medium: "Fredoka_500Medium",
+  semi: "Fredoka_600SemiBold",
+  bold: "Fredoka_700Bold",
 } as const;
 
 /** Soft drop shadow for raised cards, cross-platform. */
 export const shadow = {
-  shadowColor: "#22364B",
-  shadowOpacity: 0.12,
+  shadowColor: "#2E2A45",
+  shadowOpacity: 0.16,
   shadowRadius: 12,
-  shadowOffset: { width: 0, height: 4 },
+  shadowOffset: { width: 0, height: 5 },
   elevation: 4,
 } as const;
 
@@ -109,21 +140,10 @@ export const shadow = {
  * What every full-screen overlay's outermost view must sit on.
  *
  * Being last in the tree is not enough on Android: `elevation` outranks draw
- * order there, so the raised cards underneath (`shadow`, elevation 4, and the
- * buttons inside them at 2) punch straight through a backdrop left at 0 — the
- * home screen's Play card appearing on top of the settings dialog. The lift has
- * to clear the tallest thing on any screen, hence a number with room in it
- * rather than 5. `zIndex` is the same statement for iOS and web.
- *
- * The transparent `shadowColor` is not decoration, it is the other half of the
- * fix. Elevation on Android also *casts* a shadow, sized to the view's outline —
- * and an overlay root is full-screen and see-through (a 0.4-alpha scrim, or in
- * `FailOverlay` no background at all), so that shadow is drawn beneath it and
- * read straight through the view as a hard dark rectangle over the whole
- * display. Since API 28 `shadowColor` maps to Android's outline shadow colours,
- * so this makes the lift purely an ordering statement, which is all it was ever
- * meant to be. It cannot be dropped in favour of `elevation: 0` — that brings
- * the Play card back over the dialog.
+ * order there, so raised cards underneath punch straight through a backdrop
+ * left at 0. `zIndex` is the same statement for iOS and web. The transparent
+ * `shadowColor` stops Android casting a full-screen shadow under a see-through
+ * overlay, which reads as a dark rectangle over the whole display.
  */
 export const overlayLift = {
   elevation: 24,
@@ -134,6 +154,17 @@ export const overlayLift = {
 export const radius = {
   sm: 8,
   md: 14,
-  lg: 22,
+  lg: 24,
   pill: 999,
 } as const;
+
+/** The ladder's regions — one per grid size, named for what gets built there. */
+export const REGIONS: Record<number, { name: string; tag: string; color: string; dark: string }> = {
+  4: { name: "Meadow Lane", tag: "Easy", color: "#3DBE5B", dark: "#279A43" },
+  5: { name: "Village Green", tag: "Medium", color: "#27B9A8", dark: "#16907F" },
+  6: { name: "Market Town", tag: "Tricky", color: "#3FA7F5", dark: "#2379BD" },
+  7: { name: "Riverside City", tag: "Hard", color: "#8E6CF0", dark: "#5E43B8" },
+  8: { name: "Metropolis", tag: "Expert", color: "#FF5A5F", dark: "#D63B41" },
+};
+
+export const regionFor = (size: number) => REGIONS[size] ?? REGIONS[8];

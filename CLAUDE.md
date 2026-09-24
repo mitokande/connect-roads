@@ -2,7 +2,7 @@
 
 Project context for Claude Code. Connect Roads is a **Train Tracks** puzzle
 (the newspaper logic puzzle, sometimes called Railroad Tracks) built with Expo
-SDK 54 and React Native.
+SDK 57 and React Native.
 
 ## What the game is
 
@@ -26,7 +26,8 @@ masks) fall out of the same representation for free.
 **Deduce.** Work out *which* squares carry road. Double tap claims a square
 ("road goes here"); a single tap or a swipe crosses one out. You never say what
 *shape* the piece is — that isn't knowable yet, and the board draws a claimed
-square as four road ends pointing inward around a `?`.
+square as a pegged-out plot of earth, road ends poking in from all four edges,
+with a road-works sign carrying a `?` in the middle.
 
 **Connect.** The route's shape is still unknown, and the player drags from the
 entry terminal through the claimed squares to lay the actual road. The finished
@@ -148,7 +149,8 @@ in `isUnknown` went with the marks, for the reasons above.
 The one exception is the last frame of a won board: finishing the route means
 every road square is claimed, so the squares still unmarked are empty *and the
 player has already proved it*. `crossOutRest` writes them in as the win is
-committed — no deduction is being done for anyone at that point, and the finished
+committed (and the board then draws every off-route square as a bit of town — see
+Rendering) — no deduction is being done for anyone at that point, and the finished
 grid states the whole answer instead of trailing the squares that were never
 worth the tap.
 
@@ -169,17 +171,25 @@ src/game/                   pure, headless, no React — the whole rulebook
   codec.ts                  compact puzzle serialisation
   levelData.ts              GENERATED — the baked level bank
   levels.ts                 the ladder: level → size, seed, puzzle
+  tutorial.ts               the tutorial's four lesson boards and their script
   board.ts                  rules of play (marks, clue tallies, route legality)
   runTests.ts               npm test
 src/state/useGame.ts        board reducer + AsyncStorage progress
 src/state/useGameSounds.ts  what the board sounds like, derived from what changed
 src/components/             Board, Cell, RoadPiece, CarRide, screens, overlays
+  Scenery.tsx               sky, sun, drifting clouds, hills — every screen's backdrop
+  Diorama.tsx               the home screen's looping mini-board with traffic
+  TutorialScreen.tsx        the hand-guided tutorial, gated through the real reducer
+  GuideHand.tsx             the animated finger that demonstrates each gesture
+  Logo.tsx / Display.tsx    the wordmark, and outlined display type
 src/haptics.ts              vibration, one switch
-src/sound.ts                sound effects, one switch
-src/theme.ts                palette; colour is assigned by function
-assets/sfx/                 GENERATED — the baked sounds
+src/sound.ts                sound effects and the music loop, one switch each
+src/theme.ts                palette, fonts, regions; colour is assigned by function
+assets/sfx/                 GENERATED — the baked sounds and music
+assets/images/              GENERATED — icon, adaptive icon, splash, favicon
 scripts/buildLevels.ts      npm run levels:build
 scripts/buildSounds.ts      npm run sfx:build
+scripts/buildArt.ts         npm run art:build
 ```
 
 `src/game` never imports React. That is what lets `runTests.ts` play thousands
@@ -299,21 +309,45 @@ ever a proxy for.
 
 ## Rendering
 
+**The look is a toy-town diorama.** The board is a patch of mown lawn in a
+wooden tray, set in a landscape of sky and hills (`Scenery`), and everything
+drawn on it is something you could build in that tray. The lawn is one SVG layer
+under the cells (`Lawn` in `Board.tsx`): two greens in a checker, so the grid
+reads without a single grid line, plus a scatter of *shapeless* darker clumps. Grass
+blades were tried and removed twice — on a board of ticks, crosses and chevrons a
+V read as a tick and a three-bladed tuft as an arrow. Type is Fredoka throughout
+(`font` in `theme.ts`, loaded behind the native splash); custom fonts carry their
+weight in the family name, so nothing sets `fontWeight`.
+
 `RoadPiece.tsx` derives all ten drawings (6 pieces + 4 stubs) from one geometry:
 a curve is a quarter circle centred on the corner with **radius half a cell**, so
 its ends land exactly on the edge midpoints and therefore exactly on the
 neighbouring piece's ends. Everything else is that centreline offset sideways —
-the grass verges at ±`VERGE_OFF`, the dark kerb as a wider stroke under the
-tarmac, the dashes as the centreline itself. On a curve an offset is a concentric
-arc (wider outside the bend, tighter inside) whose ends **slide along their edge**
-by `k = 1 − 2r/s`, which is what makes two neighbouring pieces meet
-tarmac-to-tarmac and grass-to-grass with no seam. The SVG sweep flag is the sign
-of a cross product, not a lookup table. Caps are butt, never round: a rounded end
-bulges past the cell edge and prints a lip where two pieces meet.
+kerb stones as a wider stroke under the tarmac, the white edge lines at
+±`EDGE_OFF`, shrubs at ±`BUSH_OFF`, the yellow dashes as the centreline itself.
+On a curve an offset is a concentric arc (wider outside the bend, tighter inside)
+whose ends **slide along their edge** by `k = 1 − 2r/s`, which is what makes two
+neighbouring pieces meet line-to-line and kerb-to-kerb with no seam. The SVG sweep
+flag is the sign of a cross product, not a lookup table. Caps are butt, never
+round: a rounded end bulges past the cell edge and prints a lip where two pieces
+meet.
 
-Bushes are planted on the verges only above `BUSH_MIN_PX`. On an 8×8 the cells
-are small enough that shrubbery turns into smudges, and the road is the thing the
-player is trying to read.
+Shrubs are planted only above `BUSH_MIN_PX`. On an 8×8 the cells are small
+enough that shrubbery turns into smudges, and the road is the thing the player is
+trying to read.
+
+A claimed square is a dirt plot inset from the cell with short road ends reaching
+from each edge to the plot, so two claims side by side already look as if they
+could join; a ✕ is chalk-white with a shadow so it stands off the lawn. The square
+where the next road goes is tinted and ringed by `HeadRing`, which breathes — the
+only thing on an untouched board that moves, so the eye goes there first. Clues
+are round signs above and beside the tray: paper, green when settled, red when
+over-crossed.
+
+The two terminals are simply where the road runs **out through the wooden
+frame** (`Terminal`), with a chevron painted on it pointing the way the car
+travels. Nothing sits over the cell, so the printed piece — one of the few facts
+the board gives away — is never covered.
 
 `CarRide.tsx` flattens the finished route into a polyline (curves sampled around
 their arc), measures it, and uses **cumulative distance** as the interpolation
@@ -321,7 +355,9 @@ input — constant speed through corners, which is the thing the eye notices.
 Headings are unwrapped so a crossing of ±180° never spins the long way round.
 Both ends are extended off the board so the cars arrive from off-screen and leave
 the same way; the grid's clipping does the rest. Everything is native-driver
-(translate and rotate only).
+(translate and rotate only). The home screen's `Diorama` is the same trick on a
+closed loop: two laps laid end to end, each car reading them from its own offset,
+one native loop moving them all.
 
 **Five cars, not one.** The four behind the leader are that same interpolation
 with the input range slid forward by a fixed *distance*, so they trail by a
@@ -333,59 +369,58 @@ scaled by `end` too — the extra stretch is time the tail spends leaving, not t
 leader driving faster to cover it. They are painted from `theme.fleet`: five of
 one colour reads as a copy-paste, five colours read as traffic.
 
-The two ends say what they are with no instruction: a **start line** painted
-across the tarmac where the road enters, and the **chequered flag** on the square
-where it leaves. The start line was a parked car first, and the car was wrong —
-it covered the printed piece underneath, which is one of the few facts the board
-gives away and the last thing worth burying. A line is flat: same statement, road
-still readable. It is inset from the border because the terminal tab sits on that
-edge, it takes its width from `ROAD_W` so it can't drift from the lane it is
-painted on, and it goes once the car is away — there is nothing left to start.
+The two ends say what they are with no instruction: a chequered **start line**
+painted across the tarmac where the road enters, and the **chequered flag** on
+the square where it leaves. The line is flat on the road, so the printed piece
+under it stays readable; it takes its width from `ROAD_W` so it can't drift from
+the lane it is painted on, and it goes once the car is away.
 
-**The win is built around the board, not over it.** It used to be a modal card
-with the score on it, which covered the one thing the player had just spent
-minutes making. Now the finished route is *lit*, and lit **to the road's own
-shape**: `LitRoad` traces `roadRun` — the very centreline the tarmac, kerbs,
-dashes and verges are all offsets of — in two passes a little wider than
-`ROAD_SPAN`, so the glow bends through every corner exactly as the road does and
-never mentions the square it runs through. Filling whole cells was the first try
-and it lit the *grid*: a staircase of blocks with the road somewhere inside it,
-which is the one reading the board spends the whole game teaching the player to
-stop making. Sharing the geometry rather than re-deriving it is the point — a
-second copy of "straight, curve or stub" is a second chance to disagree with the
-road it is hugging.
+**The win is built around the board, not over it.** The finished route is *lit*,
+and lit **to the road's own shape**: `LitRoad` traces `roadRun` — the very
+centreline the tarmac, kerbs, lines and dashes are all offsets of — in two passes
+a little wider than `ROAD_SPAN`, so the glow bends through every corner exactly as
+the road does and never mentions the square it runs through. Filling whole cells
+was the first try and it lit the *grid*: a staircase of blocks with the road
+somewhere inside it, which is the one reading the board spends the whole game
+teaching the player to stop making.
 
 **And it grows, entry to exit**, because the road is a journey and a journey has
 a direction — the same one the convoy is about to take. That is one dash as long
 as the whole road with its offset wound from full to nothing, which is why the
 route is *one* path rather than one per cell: a dash pattern restarts at every
 subpath and every element, so `roadRun` hands back **relative** commands and
-`Geometry.step` exists to build them. It pays off twice — the cell-to-cell joins
-are tangent-continuous (a straight meets an edge square on, and so does a curve's
-end), so the glow has no seams at all, and the sweep costs two animated props a
-frame instead of two per cell. A dash offset is neither a transform nor an
+`Geometry.step` exists to build them. A dash offset is neither a transform nor an
 opacity, so that one runs on the JS thread; the pulse that takes over once the
-light has arrived is native, and so is the confetti. The light is quicker than
-the cars, so it gets there first and they follow it down a road already lit.
-Every cell off the route and every clue fades back to 0.3.
+light has arrived is native, and so is the confetti.
 
-The rest of the celebration is dropped into slots `GameScreen` already has
-(`WinCelebration.tsx`): the congratulation replaces the instruction banner — a
-gold word arched over the board, each letter its own `Text` so the text engine
-still measures the spacing, rotated and dropped on a circle. There is no outline
-on it: a dark ring made the word read as a sticker pasted over the screen, and it
-was the only black on a page that is otherwise paper and ink. The letters carry
-themselves — heavy, in the one warm colour the game keeps for winning, lifted off
-the pale board by a wide blurred glow of their own colour. The buttons replace
-the hint button,
-one big **Level _n+1_** between a replay and a levels icon. Only the confetti is
-an overlay, because it belongs to the whole screen; it loops, since a single
-burst ends in a bare screen and reads as the celebration breaking rather than
-finishing. The title is absolutely positioned inside the banner's 62pt box and
-allowed to overflow it: laid out in flow it would re-centre the stage and jog the
-board down at the exact moment the player is looking at it. Nothing restates the
-score — hearts are already along the top and the hint stock is already on the
-button that spends it.
+**The town grows round the road.** Every off-route square of a won board is
+proved empty by then (`crossOutRest` has already written it in), and instead of a
+sheet of ✕ it is built on: a house, trees, a pond or a garden, chosen by a hash of
+the square and the puzzle's seed so the same board always builds the same town,
+springing up in a stagger that spreads diagonally across the tray. The grid still
+states the whole answer — road where the road is, town everywhere else — it just
+says it the way the game would like to be remembered.
+
+**The hearts become the stars.** The three heart slots in the HUD are the score:
+on a win the hearts still standing turn into stars one at a time, each with its
+own note a step higher (`sound.star`). Stars are recorded per level as a best
+(`progress.stars`) and shown on the map; they are a record, not a rule —
+nothing reads them back into play. The rest of the celebration is dropped into
+slots `GameScreen` already has (`WinCelebration.tsx`): the congratulation replaces
+the instruction banner, and the buttons replace the tools — one big **Level
+_n+1_** between a replay and the map. The title is absolutely positioned inside
+the banner's box and allowed to overflow it, because laid out in flow it would
+re-centre the stage and jog the board at the exact moment the player is looking
+at it. Only the confetti is an overlay; it loops, since a single burst ends in a
+bare screen and reads as the celebration breaking rather than finishing.
+
+**The level list is a road trip** (`LevelsScreen`): each grid size is a region
+with its own name and colour (`REGIONS` in `theme.ts`), and the levels are stops
+along one serpentine road through it, opening scrolled to wherever the car is.
+
+**Store art is generated too.** `npm run art:build` draws the icon, the Android
+adaptive icon, the splash mark and the favicon as SVG in `scripts/buildArt.ts`
+— using the board's own road numbers — and rasterises them with resvg.
 
 ## Input
 
@@ -421,10 +456,36 @@ claim as it goes, and one careless flick should not be able to spend all three.
 Props reach the responder through a `live` ref refreshed each render — the
 responder is created once and would otherwise capture the first render's props.
 
+## Onboarding
+
+**Shown, not told.** A first-time player who presses Play (`tutorialSeen` false,
+still on level 1) gets `TutorialScreen` before any real board: four 3×3 lessons,
+**one short line** at a time, and a finger (`GuideHand`) that performs the exact
+gesture on the exact square it wants — double tap, tap, swipe, drag, or pointing
+at a clue — looping until the player copies it. It steps out of the way while the
+player moves and comes back when they pause. The order is the order the ideas are
+needed: the goal (drag start → flag, and the car ride as the payoff), what a number
+counts plus double tap, ruling out a full line (swipe, tap) and the forced claim it
+leaves, a your-turn square, and road that claims as it's pushed. A four-row recap
+card ends it; Settings and Help both replay it.
+
+The lessons are **data** (`src/game/tutorial.ts`): each step is one line and one
+**goal** the board can check (claim these, cross those, solve, drive). The screen
+runs them through the game's own `reduce` — exported from `useGame` for exactly
+this — so the tutorial can't teach a rule the game doesn't have, and it **gates**
+input to the goal: an off-script move is ignored and answered by the hand
+replaying. Two rules are softened there and only there: a wrong claim is refused
+(flash, shake, sound) but keeps the heart, with the line saying what it *would*
+have cost — which is how hearts get taught without taking one; and a road square
+can't be crossed out, which is also what lets a lone tap on a square that wants a
+double tap be answered with "twice, quickly". `npm test` plays every lesson by its
+own script and fails if one ever asks to claim an empty square, cross a road
+square, or drag a road that doesn't reach the flag.
+
 ## Sound
 
 **The sounds are generated, not sourced.** `npm run sfx:build` synthesises all
-seventeen from `scripts/buildSounds.ts` — oscillators, seeded noise, one-pole
+twenty-two effects and the music loop from `scripts/buildSounds.ts` — oscillators, seeded noise, one-pole
 filters and envelopes over a Float32 buffer — and writes 16-bit mono WAVs into
 `assets/sfx/`. A game this quiet needs a handful of very specific noises, and the
 useful ones are easier to describe as a recipe than to find: twenty lines give
@@ -432,11 +493,20 @@ exactly the 46ms tick the board wants, weigh 4kB, are byte-identical on every
 machine, and carry no licence. Same bargain as the level bank — the script is the
 source, the files are its baked output, and a rebuild never shows up as a diff.
 
-One instrument family: a short filtered-noise transient with a pitched body under
-it, nothing brighter than about 6kHz, nothing that rings. Levels are set per
+One instrument family, to match the toy-town look: struck wood and a small
+marimba (`block` and `mallet` in the script — a marimba bar is a sine with a
+fourth-harmonic overtone that dies almost at once, and that fast partial *is* the
+mallet), plus one tin-toy horn when the convoy pulls away. Levels are set per
 sound in the script rather than left to normalisation, because the difference
 between a noise you can hear a thousand times and one you mute is mostly
 loudness — and an undo is always quieter than the act it undoes.
+
+**The music is one 20-second loop** at 22.05kHz: pad, plucked bass, a quiet
+chord pulse and a marimba line that only uses pentatonic notes, so nothing in it
+can clash with an effect laid over it. It is seamless by construction — every
+note's tail that runs past the end is folded back onto the start. It has its own
+switch (`progress.music`), is created lazily, and on the web waits for the first
+touch, because browsers throw for audio started before one.
 
 **The hot sounds come in threes.** `cross` and `pave` are heard thousands of
 times, several a second inside one stroke, and the ear picks an identical sample
@@ -486,6 +556,12 @@ costs a heart if the player mis-executes it.
 A level is nothing but a number: its size and seed both derive from it, so
 progress persists as a single integer. Clearing the newest level unlocks the
 next and pays one hint (capped at 9, starting stock 5). Replaying pays nothing.
+Alongside it, `progress.stars` keeps each level's best result (hearts left at the
+win) — display only.
+
+The board's restart button is exactly **Try again** without having lost first:
+a fresh board, full hearts. It gives nothing away that leaving and re-entering
+the level didn't already.
 
 Hints spend from persisted stock: during deduction one claims a road square
 (preferring the line closest to settled, so it lands where the reasoning was
@@ -498,6 +574,8 @@ npm test              headless core tests — run this before trusting anything
 npm run typecheck     tsc --noEmit
 npm start             expo start
 npm run levels:build  regenerate the level bank (~30s, changes existing levels)
+npm run sfx:build     re-synthesise every sound and the music loop
+npm run art:build     re-draw the icon, adaptive icon, splash and favicon
 npx expo export --platform android   bundle check
 ```
 
@@ -506,7 +584,7 @@ path, **no clue is 0**, the path is a genuine self-avoiding walk, pieces face th
 only the terminals leave the grid, the solver finds **exactly one** solution and
 it is the intended one, the bank round-trips through the codec, and the play rules
 accept the solution's own moves while refusing jumps, restarts and unclaimed
-squares.
+squares. It also plays the tutorial's lessons by their script (see Onboarding).
 
 And the assertions this ladder exists for:
 

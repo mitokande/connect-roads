@@ -21,7 +21,7 @@
 
 import React, { useEffect, useMemo, useRef } from "react";
 import { Animated, Easing, StyleSheet, View } from "react-native";
-import Svg, { Rect } from "react-native-svg";
+import Svg, { Ellipse, Rect } from "react-native-svg";
 
 import { DC, DR, dirBetween, hasDir, type Dir, type Puzzle } from "../game/types";
 import { theme } from "../theme";
@@ -169,8 +169,8 @@ export function CarRide({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [road, end]);
 
-  const len = cell * 0.62;
-  const wide = cell * 0.36;
+  const len = cell * 0.6;
+  const wide = cell * 0.38;
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
@@ -203,7 +203,7 @@ export function CarRide({
               ],
             }}
           >
-            <Car length={len} width={wide} body={paint.body} edge={paint.edge} />
+            <Car length={len} width={wide} body={paint.body} edge={paint.edge} roof={paint.roof} />
           </Animated.View>
         );
       })}
@@ -212,91 +212,84 @@ export function CarRide({
 }
 
 /**
- * One car, seen from above and pointing along +x — the direction of travel, so
- * rotating it by the heading is all the drawing has to do.
+ * One toy car, seen from above and pointing along +x — the direction of travel,
+ * so rotating it by the heading is all the drawing has to do.
  *
  * Everything is a fraction of the car, so it reads the same on a 4×4 as on an
- * 8×8: wheels poking out at the corners, a cabin between two windows, and lamps
- * at the nose.
+ * 8×8: a soft shadow, four tyres poking out, a chunky body with a lighter roof
+ * panel between the windscreen and the rear window, headlamps at the nose and
+ * brake lights at the tail.
  */
 export function Car({
   length: L,
   width: W,
-  body: paint = theme.car,
-  edge = theme.carEdge,
+  body: paint = theme.fleet[0].body,
+  edge = theme.fleet[0].edge,
+  roof = theme.fleet[0].roof,
 }: {
   length: number;
   width: number;
   /** Body colour — the convoy paints each car differently. */
   body?: string;
   edge?: string;
+  roof?: string;
 }) {
-  // The body is inset so the wheels have somewhere to poke out to, which is what
-  // makes the silhouette read as a car rather than as a rounded box.
-  const top = W * 0.13;
-  const body = W * 0.74;
+  const top = W * 0.12;
+  const body = W * 0.76;
   const at = (f: number) => top + body * f;
+  const sw = Math.max(1, W * 0.05);
   return (
     <Svg width={L} height={W}>
-      {[0.15, 0.64].map((x) =>
-        [0, W * 0.82].map((y) => (
+      <Ellipse cx={L * 0.5} cy={W * 0.56} rx={L * 0.5} ry={W * 0.44} fill="#000000" opacity={0.16} />
+      {[0.14, 0.66].map((x) =>
+        [0, W * 0.8].map((y) => (
           <Rect
             key={`${x}:${y}`}
             x={L * x}
             y={y}
             width={L * 0.2}
-            height={W * 0.18}
-            rx={W * 0.07}
-            fill={theme.carGlass}
+            height={W * 0.2}
+            rx={W * 0.08}
+            fill={theme.tyre}
           />
         )),
       )}
       <Rect
-        x={0}
+        x={sw / 2}
         y={top}
-        width={L}
+        width={L - sw}
         height={body}
-        rx={body * 0.34}
+        rx={body * 0.38}
         fill={paint}
         stroke={edge}
-        strokeWidth={Math.max(1, W * 0.045)}
+        strokeWidth={sw}
       />
-      {/* windscreen at the front, rear window behind, roof between them */}
-      <Rect
-        x={L * 0.57}
-        y={at(0.1)}
-        width={L * 0.18}
-        height={body * 0.8}
-        rx={body * 0.2}
-        fill={theme.carGlass}
-      />
-      <Rect
-        x={L * 0.18}
-        y={at(0.14)}
-        width={L * 0.12}
-        height={body * 0.72}
-        rx={body * 0.18}
-        fill={theme.carGlass}
-        opacity={0.85}
-      />
-      <Rect
-        x={L * 0.32}
-        y={at(0.06)}
-        width={L * 0.22}
-        height={body * 0.88}
-        rx={body * 0.18}
-        fill="#FFFFFF"
-        opacity={0.28}
-      />
-      {[0.08, 0.66].map((f) => (
+      {/* bonnet shine */}
+      <Rect x={L * 0.72} y={at(0.2)} width={L * 0.16} height={body * 0.16} rx={body * 0.08} fill="#FFFFFF" opacity={0.35} />
+      {/* windscreen, roof, rear window */}
+      <Rect x={L * 0.54} y={at(0.1)} width={L * 0.16} height={body * 0.8} rx={body * 0.2} fill={theme.carGlass} />
+      <Rect x={L * 0.3} y={at(0.12)} width={L * 0.25} height={body * 0.76} rx={body * 0.2} fill={roof} />
+      <Rect x={L * 0.17} y={at(0.16)} width={L * 0.12} height={body * 0.68} rx={body * 0.16} fill={theme.carGlass} opacity={0.9} />
+      {[0.1, 0.68].map((f) => (
         <Rect
-          key={f}
-          x={L * 0.89}
+          key={`h${f}`}
+          x={L * 0.9}
           y={at(f)}
           width={L * 0.07}
-          height={body * 0.26}
+          height={body * 0.22}
           rx={body * 0.1}
           fill={theme.carLamp}
+        />
+      ))}
+      {[0.1, 0.68].map((f) => (
+        <Rect
+          key={`t${f}`}
+          x={L * 0.03}
+          y={at(f)}
+          width={L * 0.05}
+          height={body * 0.22}
+          rx={body * 0.08}
+          fill="#FF3B3B"
         />
       ))}
     </Svg>

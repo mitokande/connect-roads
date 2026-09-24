@@ -17,7 +17,13 @@ import { useEffect, useRef } from "react";
 
 import { blockedTotal, foundTotal } from "../game/board";
 import { sound } from "../sound";
-import type { Game } from "./useGame";
+import type { GameState } from "./useGame";
+
+/** Anything shaped like a board in play — a level, or a tutorial lesson. */
+type Board = Pick<
+  GameState,
+  "level" | "marks" | "route" | "hintsUsed" | "shake" | "phase" | "riding" | "celebrate" | "failed"
+>;
 
 type Snapshot = {
   level: number;
@@ -32,7 +38,7 @@ type Snapshot = {
   failed: boolean;
 };
 
-const snapshot = (game: Game): Snapshot => ({
+const snapshot = (game: Board): Snapshot => ({
   level: game.level,
   found: foundTotal(game.marks),
   blocked: blockedTotal(game.marks),
@@ -45,7 +51,7 @@ const snapshot = (game: Game): Snapshot => ({
   failed: game.failed,
 });
 
-export function useGameSounds(game: Game) {
+export function useGameSounds(game: Board) {
   const was = useRef<Snapshot | null>(null);
 
   useEffect(() => {

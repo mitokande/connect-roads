@@ -1,5 +1,5 @@
-// Draws one piece of road inside a cell: grass verges, tarmac over them, then
-// the dashed line down the middle.
+// Draws one piece of road inside a cell: kerb stones, tarmac over them, the two
+// white edge lines and the yellow dashes down the middle.
 //
 // A piece is a bitmask of the edges it opens onto (see `src/game/types.ts`), and
 // all six of them plus the four half-laid "stubs" come out of one geometry:
@@ -11,12 +11,12 @@
 //   * one edge only → a stub from that edge to the middle, which is what the
 //     moving end of a drag looks like while the rest is still being drawn
 //
-// Everything else is that centreline offset sideways: the verges are it at
-// ±VERGE_OFF, the kerbs at ±KERB_OFF, the dashes are it exactly. On a curve an
-// offset is a concentric arc — a wider radius outside the bend, a tighter one
-// inside — and each end slides along its edge by `k` so the offset still meets
-// the cell border square, which is what makes two neighbouring pieces line up
-// tarmac-to-tarmac and grass-to-grass with no seam.
+// Everything else is that centreline offset sideways: the edge lines at
+// ±EDGE_OFF, the shrubs at ±BUSH_OFF, the dashes are it exactly. On a curve an
+// offset is a concentric arc — wider outside the bend, tighter inside — and each
+// end slides along its edge by `k` so the offset still meets the cell border
+// square, which is what makes two neighbouring pieces meet line-to-line and
+// kerb-to-kerb with no seam.
 //
 // Caps are butt, never round: a rounded end would bulge past the cell edge and
 // print a lip where two pieces meet.
@@ -32,26 +32,30 @@ import { theme } from "../theme";
  * exported because anything painted *on* the road — the start line — has to be
  * exactly as wide as the road, and two constants would drift apart.
  */
-export const ROAD_W = 0.44;
-const VERGE_W = 0.15;
-const VERGE_OFF = ROAD_W / 2 + VERGE_W / 2;
-/** How far the tarmac's dark edge shows beyond the tarmac itself. */
-const KERB = 0.03;
-const LINE_W = 0.032;
+export const ROAD_W = 0.46;
+/** Kerb stones either side of the tarmac. */
+const KERB_W = 0.06;
+/** A hairline of darker tarmac along its edge, so the kerb has something to sit on. */
+const EDGE_DARK = 0.025;
+/** The white edge lines, just inside the tarmac. */
+const EDGE_LINE_W = 0.022;
+const EDGE_OFF = ROAD_W / 2 - 0.05;
+const LINE_W = 0.036;
 /** Dash and gap down the middle of the road. */
-const DASH = 0.15;
-const GAP = 0.13;
+const DASH = 0.16;
+const GAP = 0.12;
 
 /**
- * Below this the cell is too small for planting: bushes on a 40px square read as
- * smudges, and the road is what the player is trying to see.
+ * Below this the cell is too small for planting: shrubs on a 40px square read
+ * as smudges, and the road is what the player is trying to see.
  */
-const BUSH_MIN_PX = 52;
-const BUSH_R = 0.05;
+const BUSH_MIN_PX = 50;
+const BUSH_R = 0.055;
+const BUSH_OFF = ROAD_W / 2 + KERB_W + BUSH_R + 0.015;
 /** Where things grow along a run, as fractions of it. */
-const STRAIGHT_BUSHES = [0.26, 0.74];
-const CURVE_BUSHES = [0.22, 0.78];
-const STUB_BUSHES = [0.55];
+const STRAIGHT_BUSHES = [0.3];
+const CURVE_BUSHES = [0.5];
+const STUB_BUSHES = [0.4];
 
 type Point = [number, number];
 
@@ -194,7 +198,7 @@ export type RoadRun = {
 
 /**
  * The road's centreline through one cell — the line the tarmac, the kerbs, the
- * dashes and the verges are all offsets of — from the edge the road arrives at
+ * dashes and the kerbs are all offsets of — from the edge the road arrives at
  * to the edge it leaves by. Anything that wants to follow the *shape* of the
  * road rather than the square it sits in traces this.
  *
@@ -221,11 +225,11 @@ export function roadRun(s: number, from: Dir, to: Dir): RoadRun {
 }
 
 /**
- * How much of a cell the road actually covers, verges included. Exported for the
+ * How much of a cell the road actually covers, kerbs included. Exported for the
  * same reason as `ROAD_W`: a halo drawn around the road has to be measured from
  * the road, not from a number that happens to look right today.
  */
-export const ROAD_SPAN = ROAD_W + VERGE_W * 2;
+export const ROAD_SPAN = ROAD_W + KERB_W * 2;
 
 export type RoadPieceProps = {
   /** Cell size in px. */
@@ -242,54 +246,57 @@ export function RoadPiece({ size: s, piece }: RoadPieceProps) {
   const bushAt =
     kind === "stub" ? STUB_BUSHES : kind === "straight" ? STRAIGHT_BUSHES : CURVE_BUSHES;
   const planted = s >= BUSH_MIN_PX;
+  const centre = geo.path(0);
 
   return (
     <Svg width={s} height={s} pointerEvents="none">
       <G>
-        {[-VERGE_OFF, VERGE_OFF].map((off, i) => (
+        {/* kerb stones, then tarmac laid over them */}
+        <Path d={centre} stroke={theme.kerbDark} strokeWidth={ROAD_SPAN * s + 2} fill="none" />
+        <Path d={centre} stroke={theme.kerb} strokeWidth={ROAD_SPAN * s} fill="none" />
+        <Path
+          d={centre}
+          stroke={theme.asphaltEdge}
+          strokeWidth={(ROAD_W + EDGE_DARK) * s}
+          fill="none"
+        />
+        <Path d={centre} stroke={theme.asphalt} strokeWidth={ROAD_W * s} fill="none" />
+        {[-EDGE_OFF, EDGE_OFF].map((off, i) => (
           <Path
-            key={`verge${i}`}
+            key={`edge${i}`}
             d={geo.path(off)}
-            stroke={theme.verge}
-            strokeWidth={VERGE_W * s}
+            stroke={theme.roadEdgeLine}
+            strokeOpacity={0.85}
+            strokeWidth={Math.max(1, EDGE_LINE_W * s)}
             fill="none"
           />
         ))}
+        <Path
+          d={centre}
+          stroke={theme.roadLine}
+          strokeWidth={Math.max(1.5, LINE_W * s)}
+          strokeDasharray={`${DASH * s},${GAP * s}`}
+          strokeDashoffset={-GAP * s * 0.5}
+          strokeLinecap="butt"
+          fill="none"
+        />
         {planted
-          ? [-VERGE_OFF, VERGE_OFF].flatMap((off, i) =>
+          ? [-BUSH_OFF, BUSH_OFF].flatMap((off, i) =>
               bushAt.map((t, j) => {
                 const [cx, cy] = geo.at(off, t);
                 const r = BUSH_R * s;
-                // One shrub, and a bloom beside every other one — enough to look
-                // planted rather than stamped.
                 return (
                   <G key={`bush${i}-${j}`}>
-                    <Circle cx={cx - r * 0.5} cy={cy} r={r * 0.78} fill={theme.bush} />
-                    <Circle cx={cx + r * 0.45} cy={cy + r * 0.2} r={r * 0.62} fill={theme.bush} />
-                    <Circle cx={cx} cy={cy - r * 0.5} r={r * 0.7} fill={theme.vergeDeep} />
+                    <Circle cx={cx} cy={cy + r * 0.25} r={r} fill={theme.bush} />
+                    <Circle cx={cx - r * 0.25} cy={cy - r * 0.1} r={r * 0.62} fill={theme.bushLight} />
                     {(i + j) % 2 === 0 ? (
-                      <Circle cx={cx + r * 1.15} cy={cy - r * 0.85} r={r * 0.24} fill={theme.bloom} />
+                      <Circle cx={cx + r * 0.45} cy={cy - r * 0.35} r={r * 0.22} fill={theme.bloom} />
                     ) : null}
                   </G>
                 );
               }),
             )
           : null}
-        <Path
-          d={geo.path(0)}
-          stroke={theme.asphaltEdge}
-          strokeWidth={(ROAD_W + KERB) * s}
-          fill="none"
-        />
-        <Path d={geo.path(0)} stroke={theme.asphalt} strokeWidth={ROAD_W * s} fill="none" />
-        <Path
-          d={geo.path(0)}
-          stroke={theme.roadLine}
-          strokeWidth={LINE_W * s}
-          strokeDasharray={`${DASH * s},${GAP * s}`}
-          strokeLinecap="butt"
-          fill="none"
-        />
       </G>
     </Svg>
   );

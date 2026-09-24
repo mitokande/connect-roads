@@ -11,7 +11,8 @@
 // Rendering is deterministic — the noise source is a seeded PRNG, so re-running
 // this produces byte-identical files and a rebuild never shows up as a diff.
 //
-// Output: assets/sfx/*.wav, 16-bit mono PCM at 44.1kHz.
+// Output: assets/sfx/*.wav, 16-bit mono PCM at 44.1kHz, and one music loop at
+// 22.05kHz (it is soft and low, so the top octave it would lose is not there).
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -19,6 +20,8 @@ import { fileURLToPath } from "node:url";
 
 const SR = 44100;
 const OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "assets", "sfx");
+/** The music's own rate. Everything else is rendered at `SR`. */
+const MUSIC_SR = 22050;
 
 // --- the synth -------------------------------------------------------------
 
@@ -166,7 +169,7 @@ function finish(buf: Float32Array, level: number): Float32Array {
   return buf;
 }
 
-function wav(buf: Float32Array): Buffer {
+function wav(buf: Float32Array, rate = SR): Buffer {
   const data = Buffer.alloc(buf.length * 2);
   for (let i = 0; i < buf.length; i++) {
     const v = Math.max(-1, Math.min(1, buf[i]));
@@ -180,8 +183,8 @@ function wav(buf: Float32Array): Buffer {
   head.writeUInt32LE(16, 16); // PCM chunk size
   head.writeUInt16LE(1, 20); // PCM
   head.writeUInt16LE(1, 22); // mono
-  head.writeUInt32LE(SR, 24);
-  head.writeUInt32LE(SR * 2, 28); // byte rate
+  head.writeUInt32LE(rate, 24);
+  head.writeUInt32LE(rate * 2, 28); // byte rate
   head.writeUInt16LE(2, 32); // block align
   head.writeUInt16LE(16, 34); // bits
   head.write("data", 36);
@@ -189,174 +192,296 @@ function wav(buf: Float32Array): Buffer {
   return Buffer.concat([head, data]);
 }
 
+// --- instruments -------------------------------------------------------------
+//
+// The game is a toy town on a tabletop, so it sounds like one: struck wood and
+// a small marimba, with the odd tin-toy horn. A marimba bar is a sine with a
+// fourth-harmonic overtone that dies almost at once — that fast-dying partial
+// *is* the mallet, and it is what makes a note sound struck rather than blown.
+
+/** One marimba note. */
+function mallet(buf: Float32Array, f: number, at: number, ms: number, gain: number) {
+  tone(buf, { ms, at, f, wave: "sine", gain, attack: 2, curve: 5.2 });
+  tone(buf, { ms: ms * 0.28, at, f: f * 3.98, wave: "sine", gain: gain * 0.22, attack: 1, curve: 9 });
+  tone(buf, { ms: ms * 0.5, at, f: f * 2, wave: "sine", gain: gain * 0.12, attack: 2, curve: 7 });
+  noise(buf, { ms: 12, at, gain: gain * 0.18, lp: 3800, hp: 900, curve: 10, seed: Math.round(f) });
+}
+
+/** A hollow wood block: a very short pitched knock over a click of noise. */
+function block(buf: Float32Array, f: number, at: number, gain: number, seed: number) {
+  tone(buf, { ms: 38, at, f, to: f * 0.86, wave: "sine", gain, attack: 1, curve: 11 });
+  tone(buf, { ms: 22, at, f: f * 2.7, wave: "sine", gain: gain * 0.25, attack: 1, curve: 13 });
+  noise(buf, { ms: 14, at, gain: gain * 0.45, lp: 4200, hp: 1200, curve: 12, seed });
+}
+
+const note = (semitonesFromA4: number) => 440 * Math.pow(2, semitonesFromA4 / 12);
+/** Named pitches used below (C major, around the middle of the keyboard). */
+const P = {
+  C3: note(-21), D3: note(-19), E3: note(-17), F3: note(-16), G3: note(-14), A3: note(-12), B3: note(-10),
+  C4: note(-9), D4: note(-7), E4: note(-5), F4: note(-4), G4: note(-2), A4: note(0), B4: note(2),
+  C5: note(3), D5: note(5), E5: note(7), F5: note(8), G5: note(10), A5: note(12), C6: note(15), E6: note(19), G6: note(22),
+};
+
 // --- the sounds ------------------------------------------------------------
 //
-// One instrument family: a small wooden thing struck on a workbench, plus the
-// road under a tyre. Everything is a short filtered noise transient with a
-// pitched body under it; nothing is brighter than about 6kHz, nothing rings.
-// Levels are set here rather than left to chance, because the difference between
-// a sound you can hear a thousand times and one you mute is mostly loudness.
+// Levels are set per sound rather than left to normalisation, because the
+// difference between a noise you can hear a thousand times and one you mute is
+// mostly loudness — and an undo is always quieter than the act it undoes.
 
 const build: Record<string, () => Float32Array> = {
   /**
-   * Ruling a square out. The most repeated sound in the game by a distance, so
-   * it is barely a sound at all: a 40ms tick with no tail to trip over the next
-   * one. Three variants, rotated at the call site, because the ear picks out an
-   * identical sample repeated at speed and starts hearing a machine gun.
+   * Ruling a square out: a pencil-tap on a wood block. The most repeated sound
+   * in the game by a distance, so it is barely there and has no tail. Three
+   * takes, rotated at the call site, so a fast sweep never machine-guns.
    */
   cross1: () => variantCross(1, 1),
-  cross2: () => variantCross(2, 1.06),
-  cross3: () => variantCross(3, 0.94),
+  cross2: () => variantCross(2, 1.07),
+  cross3: () => variantCross(3, 0.93),
 
-  /** Taking a cross back: the same tick, lower and softer — an undo, not a move. */
+  /** A mark taken back: the same block, lower and softer. */
   uncross: () => {
-    const b = new Float32Array(samples(55));
-    noise(b, { ms: 34, gain: 0.5, lp: 2600, hp: 700, curve: 11, seed: 7 });
-    tone(b, { ms: 50, f: 420, to: 330, wave: "sine", gain: 0.5, curve: 9 });
-    // Quieter than the cross it takes back — an undo should never be the louder
-    // half of the pair.
-    return finish(b, 0.27);
+    const b = new Float32Array(samples(60));
+    block(b, 520, 0, 0.8, 7);
+    return finish(b, 0.24);
   },
 
   /**
-   * A claim accepted. The committing move of the deduction half, so it is the
-   * one deduction sound with any body: a soft mallet, pitch falling a fourth,
-   * landing rather than pinging.
+   * A claim accepted — a surveyor's stake going into soft ground, then a note
+   * saying "yes". The committing move, so it has body: a low thump under a
+   * two-note marimba step up a fourth.
    */
   claim: () => {
-    const b = new Float32Array(samples(190));
-    noise(b, { ms: 22, gain: 0.4, lp: 4200, hp: 900, curve: 14, seed: 11 });
-    tone(b, { ms: 170, f: 660, to: 494, wave: "sine", gain: 1, attack: 3, curve: 5.5 });
-    tone(b, { ms: 120, f: 1320, to: 988, wave: "sine", gain: 0.22, attack: 2, curve: 8 });
-    tone(b, { ms: 180, f: 247, wave: "sine", gain: 0.35, attack: 4, curve: 5 });
-    return finish(b, 0.62);
-  },
-
-  /**
-   * A claim refused. It has to read as "no" without punishing — the player has
-   * already lost a heart, and a harsh buzz on top of that is the game telling
-   * them off. So: two low notes falling a semitone, lowpassed, no fizz.
-   */
-  wrong: () => {
-    const b = new Float32Array(samples(340));
-    tone(b, { ms: 150, f: 233, wave: "soft", gain: 0.8, attack: 4, curve: 4, hold: 0.25 });
-    tone(b, { ms: 190, at: 120, f: 196, wave: "soft", gain: 0.8, attack: 4, curve: 4 });
-    tone(b, { ms: 300, f: 98, wave: "sine", gain: 0.5, attack: 6, curve: 3 });
-    noise(b, { ms: 60, gain: 0.16, lp: 1400, curve: 8, seed: 3 });
+    const b = new Float32Array(samples(360));
+    noise(b, { ms: 40, gain: 0.5, lp: 900, hp: 120, curve: 9, seed: 11 });
+    tone(b, { ms: 90, f: 150, to: 90, wave: "sine", gain: 0.7, attack: 2, curve: 7 });
+    mallet(b, P.G4, 20, 220, 0.8);
+    mallet(b, P.C5, 95, 260, 0.9);
     return finish(b, 0.6);
   },
 
   /**
-   * One more cell of road laid. Fires up to a dozen times inside a single drag,
-   * so it is short and dry — a tyre finding tarmac, not a chime. Three variants
-   * again, and they climb a little, so a fast drag sounds like acceleration
-   * rather than a stutter.
+   * A claim refused. "No" without scolding — the heart is already gone. A
+   * dull two-note toy-horn *bwomp*, falling a semitone, lowpassed.
    */
-  pave1: () => variantPave(1, 1),
-  pave2: () => variantPave(2, 1.05),
-  pave3: () => variantPave(3, 1.11),
-
-  /** Winding the road back: the pave sound falling instead of rising. */
-  unpave: () => {
-    const b = new Float32Array(samples(80));
-    noise(b, { ms: 44, gain: 0.55, lp: 3000, lpTo: 1200, hp: 400, curve: 10, seed: 23 });
-    tone(b, { ms: 70, f: 340, to: 240, wave: "tri", gain: 0.6, curve: 8 });
-    return finish(b, 0.33);
-  },
-
-  /** A hint spent: two notes up, bell-ish, so it reads as a gift not an alarm. */
-  hint: () => {
+  wrong: () => {
     const b = new Float32Array(samples(420));
-    tone(b, { ms: 180, f: 784, wave: "sine", gain: 0.7, attack: 6, curve: 6 });
-    tone(b, { ms: 300, at: 110, f: 1175, wave: "sine", gain: 0.7, attack: 8, curve: 5 });
-    tone(b, { ms: 300, at: 110, f: 2350, wave: "sine", gain: 0.12, attack: 8, curve: 7 });
-    return finish(b, 0.5);
+    tone(b, { ms: 170, f: 220, to: 208, wave: "soft", gain: 0.7, attack: 6, curve: 3.5, hold: 0.3, detune: 18 });
+    tone(b, { ms: 240, at: 150, f: 185, to: 164, wave: "soft", gain: 0.75, attack: 6, curve: 3.2, detune: 18 });
+    tone(b, { ms: 380, f: 92, wave: "sine", gain: 0.45, attack: 8, curve: 3 });
+    noise(b, { ms: 90, gain: 0.12, lp: 900, curve: 7, seed: 3 });
+    return finish(b, 0.55);
   },
 
   /**
-   * The deduction finished — every square found, the whole route now drawable.
-   * A rising major triad: the one moment in the board where the game changes
-   * character, and the only place a chord is warranted.
+   * One more cell of road: a paving slab set down. Up to a dozen inside one
+   * drag, so it is short and dry. The three takes climb a little, so a fast
+   * drag sounds like building speed rather than a stutter.
+   */
+  pave1: () => variantPave(1, 1),
+  pave2: () => variantPave(2, 1.06),
+  pave3: () => variantPave(3, 1.12),
+
+  /** Winding the road back: the slab lifted — lower, falling. */
+  unpave: () => {
+    const b = new Float32Array(samples(90));
+    noise(b, { ms: 50, gain: 0.5, lp: 1800, lpTo: 700, hp: 200, curve: 9, seed: 23 });
+    tone(b, { ms: 80, f: 300, to: 200, wave: "tri", gain: 0.5, curve: 8 });
+    return finish(b, 0.3);
+  },
+
+  /** A hint spent: a little sparkle, three bells rising. */
+  hint: () => {
+    const b = new Float32Array(samples(560));
+    [P.E5, P.G5, P.C6].forEach((f, i) => {
+      tone(b, { ms: 380, at: i * 70, f, wave: "sine", gain: 0.55, attack: 3, curve: 5 });
+      tone(b, { ms: 200, at: i * 70, f: f * 2.76, wave: "sine", gain: 0.12, attack: 2, curve: 8 });
+    });
+    noise(b, { ms: 380, gain: 0.08, lp: 9000, hp: 5000, attack: 40, curve: 4, seed: 71 });
+    return finish(b, 0.48);
+  },
+
+  /**
+   * Every square found — the whole route is drawable now. A rising marimba
+   * arpeggio: the one moment in the board where the game changes character.
    */
   settled: () => {
-    const b = new Float32Array(samples(620));
-    const notes = [523.25, 659.25, 783.99];
-    notes.forEach((f, i) => {
-      tone(b, { ms: 420 - i * 40, at: i * 90, f, wave: "sine", gain: 0.6, attack: 8, curve: 4.5 });
-      tone(b, { ms: 300, at: i * 90, f: f * 2, wave: "sine", gain: 0.1, attack: 8, curve: 6 });
-    });
+    const b = new Float32Array(samples(900));
+    [P.C4, P.E4, P.G4, P.C5, P.E5].forEach((f, i) => mallet(b, f, i * 75, 520 - i * 30, 0.75));
     return finish(b, 0.52);
   },
 
   /**
-   * The cars pulling away. Low and swelling, meant to sit *under* the drive
-   * animation for its first second rather than announce itself: an engine note
-   * rising a fifth, with tyre noise opening up over it.
+   * The convoy pulling away: a toy engine revving up, and two cheerful toots
+   * from the lead car — the only horn in the game, so it means "go".
    */
   drive: () => {
-    const b = new Float32Array(samples(1100));
-    tone(b, { ms: 1000, f: 62, to: 96, wave: "saw", gain: 0.5, attack: 90, curve: 1.6, detune: 14 });
-    tone(b, { ms: 1000, f: 124, to: 192, wave: "tri", gain: 0.22, attack: 120, curve: 2 });
-    noise(b, { ms: 1050, gain: 0.3, lp: 700, lpTo: 2600, hp: 220, attack: 140, curve: 2.2, seed: 31 });
+    const b = new Float32Array(samples(1300));
+    tone(b, { ms: 1200, f: 70, to: 118, wave: "saw", gain: 0.35, attack: 80, curve: 1.8, detune: 16 });
+    tone(b, { ms: 1200, f: 140, to: 236, wave: "tri", gain: 0.18, attack: 90, curve: 2 });
+    noise(b, { ms: 1200, gain: 0.22, lp: 600, lpTo: 2200, hp: 180, attack: 120, curve: 2.2, seed: 31 });
+    for (const at of [80, 260]) {
+      tone(b, { ms: 140, at, f: 523, wave: "soft", gain: 0.42, attack: 6, curve: 2.2, hold: 0.5, detune: 22 });
+      tone(b, { ms: 140, at, f: 659, wave: "soft", gain: 0.3, attack: 6, curve: 2.2, hold: 0.5 });
+    }
     return finish(b, 0.5);
   },
 
-  /** The level cleared. Four notes up, with a pad under them to stop it being thin. */
+  /** The level cleared: a marimba fanfare over a warm chord. */
   win: () => {
-    const b = new Float32Array(samples(1200));
-    const notes = [523.25, 659.25, 783.99, 1046.5];
-    notes.forEach((f, i) => {
-      tone(b, { ms: 520 - i * 60, at: i * 105, f, wave: "sine", gain: 0.62, attack: 5, curve: 4 });
-      tone(b, { ms: 240, at: i * 105, f: f * 3, wave: "sine", gain: 0.07, attack: 4, curve: 8 });
-    });
-    tone(b, { ms: 900, at: 60, f: 130.8, wave: "tri", gain: 0.3, attack: 60, curve: 2.4, detune: 8 });
-    tone(b, { ms: 700, at: 300, f: 196, wave: "sine", gain: 0.18, attack: 60, curve: 2.6 });
+    const b = new Float32Array(samples(1700));
+    const run = [P.C5, P.E5, P.G5, P.C6];
+    run.forEach((f, i) => mallet(b, f, i * 110, 420, 0.7));
+    mallet(b, P.G5, 520, 300, 0.55);
+    mallet(b, P.C6, 640, 900, 0.85);
+    mallet(b, P.E5, 640, 900, 0.45);
+    tone(b, { ms: 1300, at: 60, f: P.C3, wave: "tri", gain: 0.28, attack: 80, curve: 2.4, detune: 8 });
+    tone(b, { ms: 1100, at: 300, f: P.G3, wave: "sine", gain: 0.2, attack: 60, curve: 2.6 });
     return finish(b, 0.62);
+  },
+
+  /** One star landing on the win card; pitched per star at the call site. */
+  star1: () => starPop(P.E5),
+  star2: () => starPop(P.G5),
+  star3: () => starPop(P.C6),
+
+  /** A house or a tree popping up on a won board. Soft, because there are many. */
+  pop: () => {
+    const b = new Float32Array(samples(90));
+    tone(b, { ms: 80, f: 380, to: 900, wave: "sine", gain: 0.8, attack: 2, curve: 6 });
+    noise(b, { ms: 20, gain: 0.2, lp: 3000, hp: 600, curve: 10, seed: 91 });
+    return finish(b, 0.22);
   },
 
   /** Out of hearts. Falls, softly, and stops — the board behind is the message. */
   fail: () => {
-    const b = new Float32Array(samples(760));
-    const notes = [392, 329.63, 261.63];
-    notes.forEach((f, i) => {
-      tone(b, { ms: 420 - i * 40, at: i * 150, f, wave: "sine", gain: 0.6, attack: 8, curve: 3.6 });
-    });
-    tone(b, { ms: 600, at: 150, f: 87.31, wave: "sine", gain: 0.4, attack: 40, curve: 2.4 });
+    const b = new Float32Array(samples(1000));
+    [P.G4, P.E4, P.C4, P.G3].forEach((f, i) => mallet(b, f, i * 160, 520, 0.7));
+    tone(b, { ms: 800, at: 200, f: P.C3 / 2, wave: "sine", gain: 0.3, attack: 40, curve: 2.4 });
     return finish(b, 0.5);
   },
 
   /** A button. Quieter than anything on the board — chrome, not play. */
   press: () => {
-    const b = new Float32Array(samples(45));
-    noise(b, { ms: 22, gain: 0.5, lp: 5200, hp: 1400, curve: 14, seed: 41 });
-    tone(b, { ms: 40, f: 880, to: 740, wave: "sine", gain: 0.45, curve: 10 });
-    return finish(b, 0.3);
+    const b = new Float32Array(samples(55));
+    block(b, 1040, 0, 1, 41);
+    return finish(b, 0.28);
   },
 
-  /** A board opening: a short breath of air, no pitch, so it never gets old. */
+  /** A board opening: a breath of air and a soft two-note hello. */
   open: () => {
-    const b = new Float32Array(samples(340));
-    noise(b, { ms: 320, gain: 0.6, lp: 400, lpTo: 3400, hp: 300, attack: 40, curve: 3.2, seed: 53 });
-    tone(b, { ms: 260, f: 196, to: 392, wave: "sine", gain: 0.3, attack: 30, curve: 3.5 });
+    const b = new Float32Array(samples(520));
+    noise(b, { ms: 320, gain: 0.5, lp: 400, lpTo: 3000, hp: 300, attack: 40, curve: 3.2, seed: 53 });
+    mallet(b, P.C5, 120, 300, 0.5);
+    mallet(b, P.G5, 220, 300, 0.45);
     return finish(b, 0.34);
   },
 };
 
 function variantCross(seed: number, bend: number): Float32Array {
-  const b = new Float32Array(samples(46));
-  noise(b, { ms: 26, gain: 0.6, lp: 3400 * bend, hp: 900, curve: 13, seed: seed * 17 });
-  tone(b, { ms: 40, f: 620 * bend, to: 520 * bend, wave: "sine", gain: 0.45, curve: 10 });
-  return finish(b, 0.32);
+  const b = new Float32Array(samples(50));
+  block(b, 760 * bend, 0, 1, seed * 17);
+  return finish(b, 0.3);
 }
 
 function variantPave(seed: number, bend: number): Float32Array {
-  const b = new Float32Array(samples(90));
-  // The tyre: a band of noise opening upward, which is what rubber on tarmac is.
-  noise(b, { ms: 52, gain: 0.6, lp: 1500 * bend, lpTo: 3800 * bend, hp: 420, curve: 9, seed: seed * 29 });
-  // The body under it, rising so a fast drag reads as acceleration.
-  tone(b, { ms: 80, f: 260 * bend, to: 360 * bend, wave: "tri", gain: 0.65, curve: 7.5 });
-  tone(b, { ms: 55, f: 520 * bend, to: 720 * bend, wave: "sine", gain: 0.14, curve: 9 });
-  return finish(b, 0.4);
+  const b = new Float32Array(samples(100));
+  // The slab: a thud with a little grit on it.
+  noise(b, { ms: 45, gain: 0.55, lp: 1400 * bend, lpTo: 2600 * bend, hp: 260, curve: 9, seed: seed * 29 });
+  tone(b, { ms: 85, f: 210 * bend, to: 300 * bend, wave: "tri", gain: 0.6, curve: 7 });
+  tone(b, { ms: 60, f: 630 * bend, to: 840 * bend, wave: "sine", gain: 0.16, curve: 9 });
+  return finish(b, 0.38);
+}
+
+function starPop(f: number): Float32Array {
+  const b = new Float32Array(samples(480));
+  tone(b, { ms: 70, f: f / 2, to: f, wave: "sine", gain: 0.4, attack: 2, curve: 3 });
+  mallet(b, f, 40, 420, 0.9);
+  tone(b, { ms: 300, at: 40, f: f * 2, wave: "sine", gain: 0.14, attack: 4, curve: 6 });
+  noise(b, { ms: 260, at: 40, gain: 0.06, lp: 10000, hp: 5500, attack: 20, curve: 5, seed: Math.round(f) });
+  return finish(b, 0.5);
+}
+
+// --- the music ---------------------------------------------------------------
+//
+// One loop, eight bars at 96bpm (20s), under every screen. It has to be
+// something you can leave on for an hour of puzzling, so it is mostly air: a
+// soft pad, a plucked bass on the one and the three, and a marimba line that
+// only ever uses the pentatonic notes, so nothing in it can clash with the
+// sound effects laid over it.
+//
+// The loop is seamless by construction: every note's tail that runs past the
+// end is folded back onto the start, so the last bar rings on into the first
+// exactly as it would if the tune really repeated.
+
+function music(): Float32Array {
+  const bpm = 96;
+  const beat = 60 / bpm;
+  const bars = 8;
+  const len = Math.round(bars * 4 * beat * MUSIC_SR);
+  const out = new Float32Array(len);
+
+  // Render with the same synth at the music's rate by working in a scratch
+  // buffer at SR and resampling — simpler than threading a rate through.
+  const hi = new Float32Array(Math.round(bars * 4 * beat * SR) + samples(3000));
+  const at = (b: number) => b * beat * 1000;
+
+  // I – vi – IV – V, twice.
+  const chords = [
+    [P.C3, P.E4, P.G4, P.C4],
+    [P.A3 / 2, P.C4, P.E4, P.A3],
+    [P.F3, P.A3, P.C4, P.F4],
+    [P.G3, P.B3, P.D4, P.G4],
+  ];
+  const melody: [number, number, number][] = [
+    // [beat within the 8 bars, pitch, length in beats]
+    [0, P.E5, 1], [1.5, P.G5, 0.5], [2, P.A5, 1], [3, P.G5, 1],
+    [4, P.E5, 1.5], [6, P.C5, 1], [7, P.D5, 1],
+    [8, P.C5, 1], [9.5, P.D5, 0.5], [10, P.E5, 1], [11, P.G5, 1],
+    [12, P.D5, 2], [14.5, P.G4, 0.5], [15, P.A4, 1],
+    [16, P.E5, 1], [17.5, P.G5, 0.5], [18, P.A5, 1], [19, P.C6, 1],
+    [20, P.A5, 1.5], [22, P.G5, 1], [23, P.E5, 1],
+    [24, P.D5, 1], [25.5, P.E5, 0.5], [26, P.G5, 1], [27, P.E5, 1],
+    [28, P.C5, 3],
+  ];
+
+  for (let bar = 0; bar < bars; bar++) {
+    const ch = chords[bar % 4];
+    // Pad: the chord, soft and wide, swelling in over the bar.
+    for (const f of ch.slice(1)) {
+      tone(hi, { ms: 4 * beat * 1000 + 400, at: at(bar * 4), f, wave: "tri", gain: 0.09, attack: 500, curve: 1.2, detune: 9 });
+    }
+    // Bass on one and three.
+    for (const b of [0, 2]) {
+      tone(hi, { ms: 900, at: at(bar * 4 + b), f: ch[0], wave: "sine", gain: 0.42, attack: 6, curve: 4 });
+      tone(hi, { ms: 200, at: at(bar * 4 + b), f: ch[0] * 2, wave: "tri", gain: 0.08, attack: 4, curve: 7 });
+    }
+    // Light shaker on the off-beats.
+    for (let k = 0; k < 4; k++) {
+      noise(hi, { ms: 60, at: at(bar * 4 + k + 0.5), gain: 0.05, lp: 9000, hp: 4500, attack: 8, curve: 7, seed: 100 + bar * 4 + k });
+    }
+    // Marimba chord pulse, very quiet, keeping time under the tune.
+    for (const b of [1, 3]) {
+      for (const f of ch.slice(1, 3)) mallet(hi, f * 2, at(bar * 4 + b), 260, 0.07);
+    }
+  }
+  for (const [b, f, dur] of melody) mallet(hi, f, at(b), Math.max(320, dur * beat * 1000), 0.34);
+
+  // Fold the tail back onto the start, then resample to MUSIC_SR.
+  const loopHi = Math.round(bars * 4 * beat * SR);
+  for (let i = loopHi; i < hi.length; i++) hi[i - loopHi] += hi[i];
+  const ratio = SR / MUSIC_SR;
+  for (let i = 0; i < len; i++) {
+    // A two-tap average is enough of an anti-alias for material this soft.
+    const x = i * ratio;
+    const j = Math.floor(x);
+    out[i] = ((hi[j] ?? 0) + (hi[j + 1] ?? 0)) / 2;
+  }
+  // Normalise without the edge fades `finish` adds — a loop must not dip.
+  let peak = 0;
+  for (const v of out) peak = Math.max(peak, Math.abs(v));
+  const k = peak > 0 ? 0.55 / peak : 0;
+  for (let i = 0; i < len; i++) out[i] = Math.tanh(out[i] * k);
+  return out;
 }
 
 // --- go --------------------------------------------------------------------
@@ -364,12 +489,13 @@ function variantPave(seed: number, bend: number): Float32Array {
 mkdirSync(OUT, { recursive: true });
 let total = 0;
 const rows: string[] = [];
-for (const [name, make] of Object.entries(build)) {
-  const buf = wav(make());
+const emit = (name: string, buf: Buffer) => {
   writeFileSync(join(OUT, `${name}.wav`), buf);
   total += buf.length;
-  rows.push(`  ${name.padEnd(10)} ${(buf.length / 1024).toFixed(1).padStart(6)} kB`);
-}
-console.log(`Connect Roads — ${Object.keys(build).length} sounds\n`);
+  rows.push(`  ${name.padEnd(10)} ${(buf.length / 1024).toFixed(1).padStart(7)} kB`);
+};
+for (const [name, make] of Object.entries(build)) emit(name, wav(make()));
+emit("music", wav(music(), MUSIC_SR));
+console.log(`Connect Roads — ${Object.keys(build).length + 1} sounds\n`);
 console.log(rows.join("\n"));
-console.log(`\n  total      ${(total / 1024).toFixed(1).padStart(6)} kB  →  assets/sfx/`);
+console.log(`\n  total      ${(total / 1024).toFixed(1).padStart(7)} kB  →  assets/sfx/`);

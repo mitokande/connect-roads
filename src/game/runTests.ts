@@ -19,6 +19,7 @@ import {
   grabsRoad,
   hintCell,
   initialMarks,
+  isRoadCell,
   isUnknown,
   lineOverCrossed,
   MARK_BLOCKED,
@@ -68,6 +69,7 @@ import {
   tierCapForLevel,
 } from "./levels";
 import { countSolutions } from "./solver";
+import { LESSONS, lessonPuzzle } from "./tutorial";
 import {
   DC,
   DIRS,
@@ -780,6 +782,75 @@ console.log("Connect Roads — core tests\n");
     fixed: new Map(),
   });
   check(bogus.count === 0, "mismatched clue totals have no solution");
+}
+
+// --- 6. The tutorial teaches the truth --------------------------------------
+// Every lesson is played start to finish through the same rules the game uses,
+// by exactly the moves its script asks for. A lesson that points at an empty
+// square and says "double tap" would teach a rule the game doesn't have.
+{
+  let lessonChecks = 0;
+  LESSONS.forEach((lesson, li) => {
+    const p = lessonPuzzle(li);
+    const name = `lesson ${li + 1}`;
+    check(touchesEveryLine(p.rows, p.cols), `${name}: no clue is 0`);
+    const solved = countSolutions({
+      size: p.size, rows: p.rows, cols: p.cols, entry: p.entry, exit: p.exit, fixed: fixedMap(p),
+    });
+    check(solved.count === 1, `${name}: has exactly one route`);
+    check(deduce(deduceInput(p, terminalCells(p)), 2).solved, `${name}: falls to counting alone`);
+
+    let marks = initialMarks(p);
+    if (lesson.claimed) for (const { r, c } of p.path) marks = withMark(marks, p.size, r, c, MARK_ROAD);
+    for (const step of lesson.steps) {
+      const g = step.gesture;
+      if (g?.kind === "point") {
+        const clue = g.axis === "col" ? p.cols[g.index] : p.rows[g.index];
+        check(clue > 0 && g.index < p.size, `${name}: points at a real clue`);
+        if (/green/i.test(step.say)) {
+          const found = g.axis === "col" ? colFound(p, marks, g.index) : rowFound(p, marks, g.index);
+          check(found >= clue, `${name}: the clue called green is settled`);
+        }
+      }
+      const goal = step.goal;
+      if (goal.kind === "claim") {
+        for (const c of goal.cells) {
+          check(isRoadCell(p, c.r, c.c), `${name}: asks to claim (${c.r},${c.c}), which is road`);
+          marks = withMark(marks, p.size, c.r, c.c, MARK_ROAD);
+        }
+      } else if (goal.kind === "cross") {
+        for (const c of goal.cells) {
+          check(!isRoadCell(p, c.r, c.c), `${name}: asks to cross out (${c.r},${c.c}), which is empty`);
+          marks = withMark(marks, p.size, c.r, c.c, MARK_BLOCKED);
+        }
+      } else if (goal.kind === "solve") {
+        check(!deductionComplete(p, marks), `${name}: leaves something to find on your turn`);
+        for (const { r, c } of p.path) marks = withMark(marks, p.size, r, c, MARK_ROAD);
+      } else if (goal.kind === "drive") {
+        // Laid the way the hand shows it: from the start, square by square, each
+        // step a legal move or a push that claims a true road square.
+        let route: Coord[] = [];
+        const first = connectStep(p, marks, route, p.path[0]);
+        check(first !== null, `${name}: the road starts at the start line`);
+        route = first ?? [];
+        for (const target of p.path.slice(1)) {
+          const step2 = paveStep(p, marks, route, target);
+          if (step2?.kind === "claim") {
+            check(isRoadCell(p, step2.cell.r, step2.cell.c), `${name}: a push claims only road`);
+            marks = withMark(marks, p.size, step2.cell.r, step2.cell.c, MARK_ROAD);
+            const again = paveStep(p, marks, route, target);
+            route = again?.kind === "move" ? again.route : route;
+          } else if (step2?.kind === "move") {
+            route = step2.route;
+          }
+        }
+        check(connectComplete(p, route), `${name}: the dragged road reaches the flag`);
+      }
+      lessonChecks++;
+    }
+    check(deductionComplete(p, marks), `${name}: ends with every road square found`);
+  });
+  check(lessonChecks > 0, "the tutorial has steps");
 }
 
 // The drag has to be able to be wrong: if no board ever offered a push into a

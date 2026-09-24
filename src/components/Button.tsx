@@ -1,30 +1,35 @@
-// The app's buttons: a flat face sitting on a thicker bottom edge, which drops
-// by the edge's height when pressed. One component, three weights.
+// The app's buttons: a chunky face sitting on a thicker bottom edge, like a toy
+// block, which drops by the edge's height when pressed. One component, several
+// paints; and a round version for icons.
 
 import React, { useState } from "react";
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 
 import { haptics } from "../haptics";
 import { sound } from "../sound";
-import { radius, theme } from "../theme";
+import { font, radius, theme } from "../theme";
+
+export type Tone = "primary" | "teal" | "ghost" | "danger" | "gold";
 
 export type ButtonProps = {
   label: string;
   onPress: () => void;
-  tone?: "primary" | "ghost" | "danger";
+  tone?: Tone;
   size?: "md" | "lg";
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
   icon?: React.ReactNode;
 };
 
-const TONES = {
+export const TONES: Record<Tone, { face: string; edge: string; ink: string }> = {
   primary: { face: theme.accent, edge: theme.accentDark, ink: theme.onAccent },
+  teal: { face: theme.teal, edge: theme.tealDark, ink: theme.onAccent },
   danger: { face: theme.danger, edge: theme.dangerDark, ink: "#FFFFFF" },
+  gold: { face: theme.gold, edge: theme.goldDark, ink: theme.text },
   ghost: { face: theme.panel, edge: theme.panelEdge, ink: theme.text },
-} as const;
+};
 
-export const DEPTH = 4;
+export const DEPTH = 5;
 
 export function Button({ label, onPress, tone = "primary", size = "md", disabled, style, icon }: ButtonProps) {
   const [down, setDown] = useState(false);
@@ -44,7 +49,9 @@ export function Button({ label, onPress, tone = "primary", size = "md", disabled
       disabled={disabled}
       style={[{ opacity: disabled ? 0.45 : 1 }, style]}
     >
-      <View style={{ paddingBottom: down ? 0 : DEPTH, paddingTop: down ? DEPTH : 0 }}>
+      {/* Pressed, the edge folds away and the face drops by exactly its height,
+          so the button's outer box never changes size under the finger. */}
+      <View style={{ paddingTop: down ? DEPTH : 0 }}>
         <View
           style={[
             styles.face,
@@ -52,13 +59,14 @@ export function Button({ label, onPress, tone = "primary", size = "md", disabled
               backgroundColor: c.face,
               borderBottomColor: c.edge,
               borderBottomWidth: down ? 0 : DEPTH,
-              paddingVertical: tall ? 16 : 11,
-              paddingHorizontal: tall ? 34 : 20,
+              paddingVertical: tall ? 15 : 11,
+              paddingHorizontal: tall ? 30 : 20,
             },
           ]}
         >
+          <View style={styles.shine} />
           {icon}
-          <Text style={[styles.label, { color: c.ink, fontSize: tall ? 21 : 16 }]}>{label}</Text>
+          <Text style={[styles.label, { color: c.ink, fontSize: tall ? 22 : 17 }]}>{label}</Text>
         </View>
       </View>
     </Pressable>
@@ -69,9 +77,10 @@ export function Button({ label, onPress, tone = "primary", size = "md", disabled
 export function IconButton({
   children,
   onPress,
-  size = 42,
+  size = 44,
   badge,
   disabled,
+  tone = "ghost",
   style,
 }: {
   children: React.ReactNode;
@@ -79,9 +88,12 @@ export function IconButton({
   size?: number;
   badge?: number;
   disabled?: boolean;
+  tone?: Tone;
   style?: StyleProp<ViewStyle>;
 }) {
   const [down, setDown] = useState(false);
+  const c = TONES[tone];
+  const depth = Math.round(size * 0.09);
   return (
     <Pressable
       onPressIn={() => setDown(true)}
@@ -93,21 +105,37 @@ export function IconButton({
         onPress();
       }}
       disabled={disabled}
-      style={[
-        styles.icon,
-        {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          transform: [{ scale: down ? 0.94 : 1 }],
-          opacity: disabled ? 0.45 : 1,
-        },
-        style,
-      ]}
+      hitSlop={4}
+      style={[{ width: size, height: size + depth, opacity: disabled ? 0.45 : 1 }, style]}
     >
-      {children}
+      <View
+        style={[
+          styles.icon,
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            backgroundColor: c.edge,
+            top: depth,
+          },
+        ]}
+      />
+      <View
+        style={[
+          styles.icon,
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            backgroundColor: c.face,
+            top: down ? depth : 0,
+          },
+        ]}
+      >
+        {children}
+      </View>
       {badge !== undefined ? (
-        <View style={styles.badge}>
+        <View style={[styles.badge, { top: down ? depth - 4 : -4 }]}>
           <Text style={styles.badgeText}>{badge}</Text>
         </View>
       ) : null}
@@ -117,36 +145,41 @@ export function IconButton({
 
 const styles = StyleSheet.create({
   face: {
-    borderRadius: radius.md,
+    borderRadius: radius.md + 2,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
     gap: 8,
+    overflow: "hidden",
   },
-  label: { fontWeight: "800", letterSpacing: 0.2 },
+  shine: {
+    position: "absolute",
+    left: 8,
+    right: 8,
+    top: 4,
+    height: "38%",
+    borderRadius: radius.md,
+    backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  label: { fontFamily: font.bold, letterSpacing: 0.3 },
   icon: {
-    backgroundColor: theme.panel,
+    position: "absolute",
+    left: 0,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: theme.frame,
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
   },
   badge: {
     position: "absolute",
-    top: -4,
-    right: -4,
-    minWidth: 20,
-    height: 20,
-    paddingHorizontal: 4,
-    borderRadius: 10,
-    backgroundColor: theme.good,
+    right: -5,
+    minWidth: 22,
+    height: 22,
+    paddingHorizontal: 5,
+    borderRadius: 11,
+    backgroundColor: theme.danger,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: theme.bg,
+    borderColor: "#FFFFFF",
   },
-  badgeText: { color: "#FFFFFF", fontSize: 11, fontWeight: "800" },
+  badgeText: { color: "#FFFFFF", fontSize: 12, fontFamily: font.bold, includeFontPadding: false },
 });

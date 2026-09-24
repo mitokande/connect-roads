@@ -27,12 +27,17 @@ import cross3 from "../assets/sfx/cross3.wav";
 import driveSrc from "../assets/sfx/drive.wav";
 import failSrc from "../assets/sfx/fail.wav";
 import hintSrc from "../assets/sfx/hint.wav";
+import musicSrc from "../assets/sfx/music.wav";
 import openSrc from "../assets/sfx/open.wav";
 import pave1 from "../assets/sfx/pave1.wav";
 import pave2 from "../assets/sfx/pave2.wav";
 import pave3 from "../assets/sfx/pave3.wav";
+import popSrc from "../assets/sfx/pop.wav";
 import pressSrc from "../assets/sfx/press.wav";
 import settledSrc from "../assets/sfx/settled.wav";
+import star1 from "../assets/sfx/star1.wav";
+import star2 from "../assets/sfx/star2.wav";
+import star3 from "../assets/sfx/star3.wav";
 import uncrossSrc from "../assets/sfx/uncross.wav";
 import unpaveSrc from "../assets/sfx/unpave.wav";
 import winSrc from "../assets/sfx/win.wav";
@@ -53,6 +58,10 @@ const SOURCES = {
   fail: [failSrc],
   press: [pressSrc],
   open: [openSrc],
+  star1: [star1],
+  star2: [star2],
+  star3: [star3],
+  pop: [popSrc, popSrc, popSrc],
 } as const;
 
 type Id = keyof typeof SOURCES;
@@ -69,6 +78,7 @@ const FLOOR_MS: Partial<Record<Id, number>> = {
   pave: 28,
   unpave: 28,
   press: 40,
+  pop: 45,
 };
 
 /**
@@ -162,10 +172,46 @@ function fire(id: Id) {
   else v.player.seekTo(0).then(() => start(v)).catch(() => {});
 }
 
+// --- music -------------------------------------------------------------------
+//
+// One looped player, made lazily: it is the only large file in the set, and a
+// player that never plays should not cost a decode. It has its own switch,
+// separate from the effects — plenty of players want the clicks and not the
+// tune, and the reverse.
+
+const MUSIC_VOLUME = 0.32;
+let musicOn = false;
+let musicPlayer: AudioPlayer | null = null;
+
+function syncMusic() {
+  try {
+    if (musicOn && !musicPlayer) {
+      musicPlayer = createAudioPlayer(musicSrc, { updateInterval: 60_000, keepAudioSessionActive: true });
+      musicPlayer.loop = true;
+      musicPlayer.volume = MUSIC_VOLUME;
+    }
+    if (!musicPlayer) return;
+    if (musicOn) musicPlayer.play();
+    else musicPlayer.pause();
+  } catch {
+    // No audio: a silent game, not a broken one.
+  }
+}
+
 export const sound = {
   setEnabled(on: boolean) {
     enabled = on;
   },
+  /** The background loop. Browsers refuse audio before a touch, so callers
+   * re-assert this on the first press too — see `App.tsx`. */
+  setMusic(on: boolean) {
+    musicOn = on;
+    syncMusic();
+  },
+  /** One star landing, 1–3, each a step higher. */
+  star: (n: number) => fire(n >= 3 ? "star3" : n === 2 ? "star2" : "star1"),
+  /** A house or tree springing up on a won board. */
+  pop: () => fire("pop"),
   /** A square ruled out. */
   cross: () => fire("cross"),
   /** A mark taken back — a cross rubbed out, or a claim un-claimed. */
