@@ -15,8 +15,9 @@ road — not which ones. That's the whole puzzle.
 - **Single tap** to cross a square out, or **swipe** to cross out a run of them.
   Crosses are free notes — never checked, never penalised. Every ✕ on the board
   is yours; the game never crosses anything out for you.
-- A clue turns **green** when you've found all its road, and **red** if you've
-  ruled out so much of a line that its count can't be met.
+- A clue turns **green** when you've found all its road, and becomes a red
+  **warning sign** if you've ruled out so much of a line that its count can't be
+  met. A claimed square stays claimed — claims are checked, so they're always true.
 
 **Connect** — **drag** from the entry arrow to lay the actual road. You can do
 this at any time, not only once every square is found.
@@ -29,12 +30,31 @@ this at any time, not only once every square is found.
 - Drag back along the road to rub it out. Finish the route and five cars drive
   it, the road lights up, and a little town grows on every square it missed.
 
+Leave a board whenever you like — it's kept, hearts and all, and picks up where
+you left off. Only **Start again** clears it (and refills the hearts).
+
+Every day there's a **daily road** — the same board for everyone, small on Monday
+and big by Sunday — with a streak for days in a row. It unlocks after level 10.
+
+New tricks are taught as the ladder needs them — *Two ways out* before level 2,
+*Try each way* before level 20, *What if?* before level 113 — each a one-minute
+lesson on a tiny board, then replayable from the help.
+
+Stuck? A **hint** shows the next thing you can reason out and says why, right on
+the board — and if you've crossed out a square that's really road, it tells you
+that first.
+
 Three hearts per board, and the hearts you finish with become the level's stars.
+Stars open new paint jobs for your convoy in the **garage** (tap the star count on
+the home screen), and every region builds its own town round your roads — fields
+in the meadows, rooftops in the city — which stays on the map as you clear it.
 Run out and your marks stay on the board — the answer is never shown — so you can
 read back where it went wrong before trying again.
 
-120 levels across five regions of a road trip — Meadow Lane (4×4) up to
-Metropolis (8×8). Every board has exactly one solution.
+150 levels across seven regions of a road trip — Meadow Lane (4×4) up to
+Metropolis (8×8), then up into the mountains: **Mountain Pass**, where rocks,
+pines and lakes are printed on the board and hold no road, and **Cloud Summit**,
+where fog hides some of the numbers. Every board has exactly one solution.
 
 ## Running it
 
@@ -45,9 +65,10 @@ npm start          # then press a / i, or scan the QR code with Expo Go
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | Headless tests over the whole puzzle core and all 120 levels |
+| `npm test` | Headless tests over the whole puzzle core and all 150 levels |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run levels:build` | Regenerate the baked level bank (~30s) |
+| `npm run daily:build` | Regenerate the baked daily bank (~2 min) |
 | `npm run sfx:build` | Re-synthesise the sound effects and music loop into `assets/sfx/` |
 | `npm run art:build` | Re-draw the icon, adaptive icon, splash and favicon into `assets/images/` |
 | `npm run android` / `npm run ios` / `npm run web` | Platform targets |

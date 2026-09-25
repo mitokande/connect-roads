@@ -22,18 +22,18 @@ import {
   isRoadCell,
   isUnknown,
   lineOverCrossed,
+  lineSettled,
   MARK_BLOCKED,
   MARK_NONE,
   MARK_ROAD,
   markAt,
-  nextRouteCell,
   paveStep,
   routePieces,
   rowFound,
   shownPiece,
   stubDir,
   roadTotal,
-  trimRoute,
+  replayRoute,
   withMark,
   type Marks,
 } from "./board";
@@ -42,6 +42,7 @@ import {
   deduce,
   deduceInput,
   ladderScore,
+  nextSteps,
   terminalCells,
   NO_ROAD,
   ROAD,
@@ -52,6 +53,7 @@ import {
   fixedMap,
   generateGraded,
   generatePuzzle,
+  solverInput,
   MAX_EXTRA_REVEALS,
   mulberry32,
   piecesFromPath,
@@ -59,6 +61,7 @@ import {
 } from "./generator";
 import { LEVEL_BANK } from "./levelData";
 import {
+  bandFor,
   bandIndex,
   GRACE_LEVELS,
   HARD_TIER_FROM,
@@ -68,8 +71,37 @@ import {
   sizeForLevel,
   tierCapForLevel,
 } from "./levels";
+import {
+  bankIndex,
+  currentStreak,
+  DAILY_EPOCH,
+  DAILY_WEEKS,
+  dailyId,
+  dailyPuzzle,
+  dayOf,
+  isDaily,
+  NO_DAILY,
+  recordDaily,
+  tierNeeded,
+  today,
+  WEEK,
+  WEEKDAYS,
+  weekday,
+} from "./daily";
+import { DAILY_BANK } from "./dailyData";
+import { FLEETS, fleetById, isUnlocked, newlyUnlocked, totalStars } from "./garage";
+import { deductionTip, routeTip } from "./hint";
+import { restoreBoard, saveBoard, worthKeeping, type SavedBoard } from "./save";
 import { countSolutions } from "./solver";
-import { LESSONS, lessonPuzzle } from "./tutorial";
+import {
+  LESSONS,
+  lessonPuzzle,
+  TECHNIQUES,
+  techniqueDue,
+  techniqueFor,
+  type Lesson,
+  type Technique,
+} from "./tutorial";
 import {
   DC,
   DIRS,
@@ -77,6 +109,8 @@ import {
   EMPTY,
   dirsOf,
   hasDir,
+  isFogged,
+  isScenery,
   key,
   opposite,
   same,
@@ -186,15 +220,9 @@ function auditPuzzle(p: Puzzle, label: string) {
     );
   }
 
-  // The referee, re-run from the clues alone.
-  const res = countSolutions({
-    size: n,
-    rows: p.rows,
-    cols: p.cols,
-    entry: p.entry,
-    exit: p.exit,
-    fixed: fixedMap(p),
-  });
+  // The referee, re-run from the clues alone — as the player is given them, fog
+  // and scenery included.
+  const res = countSolutions(solverInput(p));
   check(res.exhausted, `${label}: solver finished within budget`);
   check(res.count === 1, `${label}: exactly one solution (got ${res.count})`);
   if (res.solution) {
@@ -235,18 +263,21 @@ function auditPlay(p: Puzzle, label: string) {
     `${label}: crossing one square out counts exactly one`,
   );
 
-  // Only a mark of the player's makes a square known. A settled row or column
-  // proves its leftovers empty, but the board keeps that to itself: it must not
-  // quietly exempt those squares from the road's push, or "refused" would mean
-  // "empty" and the drag would be a free probe. Unmarked is unknown, full stop.
+  // Only a mark of the player's — or something the board printed — makes a
+  // square known. A settled row or column proves its leftovers empty, but the
+  // board keeps that to itself: it must not quietly exempt those squares from the
+  // road's push, or "refused" would mean "empty" and the drag would be a free
+  // probe. Scenery is the one printed empty, and it is no probe: everyone can see
+  // it. Otherwise unmarked is unknown, full stop.
   for (let r = 0; r < p.size; r++) {
     for (let c = 0; c < p.size; c++) {
       const settled = rowFound(p, marks, r) >= p.rows[r] || colFound(p, marks, c) >= p.cols[c];
+      const printed = isScenery(p, r, c);
       check(
-        isUnknown(p, marks, r, c) === (markAt(marks, p.size, r, c) === MARK_NONE),
-        `${label}: ${r},${c} is unknown exactly while the player hasn't marked it`,
+        isUnknown(p, marks, r, c) === (markAt(marks, p.size, r, c) === MARK_NONE && !printed),
+        `${label}: ${r},${c} is unknown exactly while nothing — player or print — has said what it is`,
       );
-      if (p.solution[r][c] === EMPTY && settled) {
+      if (p.solution[r][c] === EMPTY && settled && !printed) {
         check(
           isUnknown(p, marks, r, c),
           `${label}: a settled line doesn't exempt empty ${r},${c} from the push`,
@@ -271,8 +302,8 @@ function auditPlay(p: Puzzle, label: string) {
     }
     const stillFree = p.fixed.filter((f) => f.r === r).length;
     check(
-      lineOverCrossed(p, crossed, r, false) === stillFree < p.rows[r],
-      `${label}: row ${r} flags exactly when its clue became unreachable`,
+      lineOverCrossed(p, crossed, r, false) === (!isFogged(p, false, r) && stillFree < p.rows[r]),
+      `${label}: row ${r} flags exactly when its clue became unreachable (and never under fog)`,
     );
   }
 
@@ -373,21 +404,34 @@ function auditPlay(p: Puzzle, label: string) {
       }
     }
 
-    // Un-claiming underneath a drawn road cuts it there — and takes the rest.
-    check(trimRoute(p, early, road) === road, `${label}: a backed-up road is left alone`);
+    // A road drawn again from nothing — how a stored one is brought back — comes
+    // out exactly as drawn, and is cut at the first square the marks don't back.
+    const again = replayRoute(p, early, road);
+    check(
+      again.length === road.length && again.every((c, i) => same(c, road[i])),
+      `${label}: a legal road replays as drawn`,
+    );
     if (road.length > 1) {
       const end = road[road.length - 1];
       check(
-        trimRoute(p, withMark(early, p.size, end.r, end.c, MARK_NONE), road).length ===
+        replayRoute(p, withMark(early, p.size, end.r, end.c, MARK_NONE), road).length ===
           road.length - 1,
-        `${label}: un-claiming the road's end cuts it back one`,
+        `${label}: a replay stops short of an unclaimed end`,
+      );
+      check(
+        replayRoute(p, early, [...road, end]).length === road.length,
+        `${label}: a square listed twice ends the replay`,
       );
     }
     if (road.length > 2) {
       const mid = road[1];
       check(
-        trimRoute(p, withMark(early, p.size, mid.r, mid.c, MARK_NONE), road).length === 1,
-        `${label}: un-claiming mid-road drops everything past it`,
+        replayRoute(p, withMark(early, p.size, mid.r, mid.c, MARK_NONE), road).length === 1,
+        `${label}: an unclaimed square mid-road drops everything past it`,
+      );
+      check(
+        replayRoute(p, early, [road[0], road[2]]).length === 1,
+        `${label}: a replay refuses a jump`,
       );
     }
   }
@@ -468,14 +512,197 @@ function auditPlay(p: Puzzle, label: string) {
   );
   check(back !== undefined, `${label}: sanity — the route has a previous cell`);
 
-  // The hint knows what comes next, and stops at the end.
-  const upto = p.path.slice(0, 2);
-  const nxt = nextRouteCell(p, upto);
+  // The road's hint knows what comes next, stops at the end, and winds a wrong
+  // turn back to where it went wrong.
+  const first = routeTip(p, []);
   check(
-    nxt !== null && nxt.r === p.path[2].r && nxt.c === p.path[2].c,
-    `${label}: the route hint points at the next solution cell`,
+    first?.route.length === 1 && same(first.route[0], p.path[0]),
+    `${label}: the road's first hint is the start line`,
   );
-  check(nextRouteCell(p, p.path) === null, `${label}: a finished route has no next cell`);
+  const upto = routeTip(p, p.path.slice(0, 2));
+  check(
+    upto?.route.length === 3 && same(upto.route[2], p.path[2]) && same(upto.tip.point[0], p.path[2]),
+    `${label}: the road's hint lays and points at the next solution cell`,
+  );
+  check(routeTip(p, p.path) === null, `${label}: a finished road has no hint`);
+  if (p.path.length > 4) {
+    const turned = [...p.path.slice(0, 3), p.path[4]];
+    const back = routeTip(p, turned);
+    check(
+      back !== null && back.route.length === 4 && same(back.route[3], p.path[3]) && /wrong/i.test(back.tip.say),
+      `${label}: a wrong turn is wound back and set right`,
+    );
+  }
+}
+
+/**
+ * The hints, played by a player who does nothing but follow them. Every square a
+ * hint claims must be road and every square it rules out must be empty — a hint
+ * that lied would be the game cheating the player it is meant to help — and
+ * following them alone must finish the board, every time.
+ */
+function auditHints(p: Puzzle, label: string): number {
+  let marks = initialMarks(p);
+  let worst = 0;
+  let given = 0;
+  let honest = true;
+  let moving = true;
+  let explained = true;
+  while (!deductionComplete(p, marks) && given <= p.size * p.size) {
+    const t0 = performance.now();
+    const tip = deductionTip(p, marks, []);
+    worst = Math.max(worst, performance.now() - t0);
+    if (!tip) break;
+    given++;
+    if (!tip.say || !tip.point.length) explained = false;
+    const before = marks;
+    for (const { r, c } of tip.claim) {
+      if (!isRoadCell(p, r, c)) honest = false;
+      marks = withMark(marks, p.size, r, c, MARK_ROAD);
+    }
+    // A hint that claims nothing is pointing at empty squares for the player to
+    // rule out themselves — the board never crosses anything out for them.
+    if (!tip.claim.length) {
+      for (const { r, c } of tip.point) {
+        if (isRoadCell(p, r, c)) honest = false;
+        marks = withMark(marks, p.size, r, c, MARK_BLOCKED);
+      }
+    }
+    if (marks.every((m, i) => m === before[i])) {
+      moving = false;
+      break;
+    }
+  }
+  check(honest, `${label}: every hint tells the truth`);
+  check(explained, `${label}: every hint says why, and points at what`);
+  check(moving, `${label}: every hint moves the board on`);
+  check(deductionComplete(p, marks), `${label}: following the hints alone finishes the board`);
+
+  // Mistakes come first: a road square crossed out is the hint's first business.
+  const road = p.path.find((c) => shownPiece(p, c.r, c.c) === null);
+  if (road) {
+    const slipped = withMark(initialMarks(p), p.size, road.r, road.c, MARK_BLOCKED);
+    const tip = deductionTip(p, slipped, []);
+    check(
+      tip !== null && tip.claim.length === 1 && same(tip.claim[0], road),
+      `${label}: a road square crossed out is the first thing a hint fixes`,
+    );
+  }
+
+  // A green line is read as swept: nobody pays a hint to be told what the green
+  // sign already says.
+  const row = p.path[0].r;
+  let green = initialMarks(p);
+  for (const { r, c } of p.path) if (r === row) green = withMark(green, p.size, r, c, MARK_ROAD);
+  const tip = deductionTip(p, green, []);
+  check(
+    tip !== null &&
+      !tip.point.some((c) => c.r === row && markAt(green, p.size, c.r, c.c) !== MARK_ROAD),
+    `${label}: a hint never points at a green line's leftovers`,
+  );
+  return worst;
+}
+
+/**
+ * A board left half-played comes back exactly as it was left — hearts included,
+ * or leaving would be a refill — and a save that doesn't hold up comes back as
+ * nothing at all rather than as a board the rules never produced.
+ */
+function auditSave(p: Puzzle, other: Puzzle, label: string) {
+  const MAX = 3;
+  const put = (s: string, i: number, m: number) => s.slice(0, i) + String(m) + s.slice(i + 1);
+
+  check(
+    !worthKeeping({ puzzle: p, marks: initialMarks(p), route: [], hearts: MAX, hintsUsed: 0 }, MAX),
+    `${label}: an untouched board is not worth saving`,
+  );
+
+  // Mid-board: half the road claimed and drawn as far as the claims allow, an
+  // empty square crossed out, a road square wrongly crossed out (crosses are the
+  // player's, mistakes and all), a heart gone and a hint spent.
+  let marks = initialMarks(p);
+  const half = Math.floor(p.path.length / 2);
+  for (const { r, c } of p.path.slice(0, half)) marks = withMark(marks, p.size, r, c, MARK_ROAD);
+  let empty: Coord | null = null;
+  for (let i = 0; i < p.size * p.size && !empty; i++) {
+    if (!isRoadCell(p, Math.floor(i / p.size), i % p.size)) empty = { r: Math.floor(i / p.size), c: i % p.size };
+  }
+  if (!empty) {
+    check(false, `${label}: sanity — the board has an empty square`);
+    return;
+  }
+  marks = withMark(marks, p.size, empty.r, empty.c, MARK_BLOCKED);
+  const miss = p.path.slice(half).find((c) => markAt(marks, p.size, c.r, c.c) === MARK_NONE);
+  if (miss) marks = withMark(marks, p.size, miss.r, miss.c, MARK_BLOCKED);
+  let route: Coord[] = [];
+  for (const cell of p.path) {
+    const next = connectStep(p, marks, route, cell);
+    if (!next) break;
+    route = next;
+  }
+  const board = { puzzle: p, marks, route, hearts: MAX - 1, hintsUsed: 1 };
+  check(worthKeeping(board, MAX), `${label}: a half-played board is worth saving`);
+
+  // Through JSON, as AsyncStorage will carry it.
+  const stored = JSON.parse(JSON.stringify(saveBoard(board))) as SavedBoard;
+  const back = restoreBoard(p, stored, MAX);
+  check(back !== null, `${label}: a saved board restores`);
+  if (back) {
+    check(back.marks.every((m, i) => m === marks[i]), `${label}: every mark comes back as left`);
+    check(
+      back.route.length === route.length && back.route.every((c, i) => same(c, route[i])),
+      `${label}: the road comes back as drawn`,
+    );
+    check(back.hearts === MAX - 1, `${label}: the hearts come back as left — leaving is no refill`);
+    check(back.hintsUsed === 1, `${label}: the hints spent come back`);
+  }
+
+  check(restoreBoard(other, stored, MAX) === null, `${label}: a save for another board is refused`);
+  const at = empty.r * p.size + empty.c;
+  check(
+    restoreBoard(p, { ...stored, marks: put(stored.marks, at, MARK_ROAD) }, MAX) === null,
+    `${label}: a save claiming an empty square is refused — a ✓ is always true`,
+  );
+  check(restoreBoard(p, { ...stored, hearts: 0 }, MAX) === null, `${label}: a save with no hearts is refused`);
+  check(
+    restoreBoard(p, { ...stored, hearts: MAX + 1 }, MAX) === null,
+    `${label}: a save with extra hearts is refused`,
+  );
+  check(
+    restoreBoard(p, { ...stored, marks: stored.marks.slice(1) }, MAX) === null,
+    `${label}: a save of the wrong size is refused`,
+  );
+
+  // A printed piece is claimed whatever the save says about it.
+  const f = p.fixed[p.fixed.length - 1];
+  const unprinted = restoreBoard(p, { ...stored, marks: put(stored.marks, f.r * p.size + f.c, MARK_NONE) }, MAX);
+  check(
+    unprinted !== null && markAt(unprinted.marks, p.size, f.r, f.c) === MARK_ROAD,
+    `${label}: a printed piece comes back claimed`,
+  );
+
+  // The road is drawn again through the rules, not copied: a jump tacked on the
+  // end is dropped.
+  if (route.length > 0) {
+    const head = route[route.length - 1];
+    const far = { r: head.r, c: (head.c + 2) % p.size };
+    const jumped = restoreBoard(p, { ...stored, route: [...stored.route, far.r * p.size + far.c] }, MAX);
+    check(jumped?.route.length === route.length, `${label}: a stored road can't jump`);
+  }
+
+  // A whole road is a won board, which is never saved; one arriving anyway comes
+  // back a step short, so the win is still the player's to land.
+  let all = initialMarks(p);
+  for (const { r, c } of p.path) all = withMark(all, p.size, r, c, MARK_ROAD);
+  const finished = restoreBoard(
+    p,
+    saveBoard({ puzzle: p, marks: all, route: p.path, hearts: MAX, hintsUsed: 0 }),
+    MAX,
+  );
+  check(
+    finished !== null && finished.route.length === p.path.length - 1,
+    `${label}: a finished road comes back one step short of the flag`,
+  );
 }
 
 console.log("Connect Roads — core tests\n");
@@ -614,7 +841,7 @@ console.log("Connect Roads — core tests\n");
       );
     }
 
-    const band = sizeForLevel(level);
+    const band = bandFor(level).first;
     if (!ramp.has(band)) ramp.set(band, []);
     ramp.get(band)!.push(ladderScore(bare.grade, played.grade));
   }
@@ -622,20 +849,55 @@ console.log("Connect Roads — core tests\n");
   // Each band is a ramp, not a bag: difficulty rises through it. This is the
   // fault that made levels 76 and 120 statistically the same 8×8 board — the seed
   // was a hash of the level number and nothing ever graded the result.
-  for (const [size, scores] of [...ramp].sort((a, b) => a[0] - b[0])) {
+  for (const [first, scores] of [...ramp].sort((a, b) => a[0] - b[0])) {
+    const name = `the ${bandFor(first).region} band`;
     let dip = -1;
     for (let i = 1; i < scores.length; i++) {
       if (scores[i] < scores[i - 1] && dip < 0) dip = i;
     }
     check(
       dip < 0,
-      `the ${size}×${size} band is ordered easiest-first` +
+      `${name} is ordered easiest-first` +
         (dip < 0 ? "" : ` (dips at slot ${dip}: ${scores[dip - 1]} → ${scores[dip]})`),
     );
     check(
       scores[scores.length - 1] > scores[0],
-      `the ${size}×${size} band actually gets harder (${scores[0]} → ${scores[scores.length - 1]})`,
+      `${name} actually gets harder (${scores[0]} → ${scores[scores.length - 1]})`,
     );
+  }
+
+  // The mountains carry exactly their twists, and the classic ladder none.
+  for (let level = 1; level <= LEVEL_COUNT; level++) {
+    const p = puzzleForLevel(level);
+    const band = bandFor(level);
+    const scenery = p.scenery ?? [];
+    check(scenery.length === (band.scenery ?? 0), `level ${level}: has its band's ${band.scenery ?? 0} scenery squares`);
+    check(
+      scenery.every((s) => p.solution[s.r][s.c] === EMPTY),
+      `level ${level}: scenery only ever stands where there is no road`,
+    );
+    check(
+      new Set(scenery.map((s) => key(s.r, s.c))).size === scenery.length,
+      `level ${level}: no square is scenery twice`,
+    );
+    const fog = p.fog?.index ?? [];
+    check(fog.length === (band.fog ?? 0), `level ${level}: has its band's ${band.fog ?? 0} fogged lines`);
+    // One fogged line alone would be no secret: the other axis sums to the
+    // road's length, so it would be that sum less the visible ones.
+    check(fog.length === 0 || fog.length >= 2, `level ${level}: fog hides two lines or none`);
+    if (p.fog) {
+      const column = p.fog.axis === "col";
+      let silent = true;
+      let all = initialMarks(p);
+      for (const { r, c } of p.path) all = withMark(all, p.size, r, c, MARK_ROAD);
+      // Every road square crossed out: each visible line would turn red.
+      let none = initialMarks(p);
+      for (const { r, c } of p.path) none = withMark(none, p.size, r, c, MARK_BLOCKED);
+      for (const i of p.fog.index) {
+        if (lineSettled(p, all, i, column) || lineOverCrossed(p, none, i, column)) silent = false;
+      }
+      check(silent, `level ${level}: a fogged sign never turns green or red — either would give its count away`);
+    }
   }
 }
 
@@ -716,6 +978,9 @@ console.log("Connect Roads — core tests\n");
 {
   const worst = new Map<number, number>();
   const totals = new Map<number, { n: number; ms: number; fill: number }>();
+  /** The last board built — the "other board" a save must refuse to open on. */
+  let prev: Puzzle = lessonPuzzle(LESSONS[0]);
+  let hintWorst = 0;
 
   for (let level = 1; level <= LEVEL_COUNT; level++) {
     const t0 = performance.now();
@@ -738,7 +1003,14 @@ console.log("Connect Roads — core tests\n");
 
     auditPuzzle(puzzle, `level ${level}`);
     auditPlay(puzzle, `level ${level}`);
+    auditSave(puzzle, prev, `level ${level}`);
+    hintWorst = Math.max(hintWorst, auditHints(puzzle, `level ${level}`));
+    prev = puzzle;
   }
+  // A hint is a button press; it has to answer at once, on a phone, on the
+  // hardest board there is. Measured here in Node, with a wide margin for that.
+  check(hintWorst < 100, `a hint answers at once (worst ${hintWorst.toFixed(1)}ms)`);
+  console.log(`  hints: worst ${hintWorst.toFixed(1)}ms`);
 
   console.log("  generation, by size:");
   for (const [size, agg] of [...totals].sort((a, b) => a[0] - b[0])) {
@@ -761,12 +1033,9 @@ console.log("Connect Roads — core tests\n");
   for (let level = 1; level <= 40 && !checkedOne; level++) {
     const p = puzzleForLevel(level);
     if (p.fixed.length < 3) continue;
-    const fixed = fixedMap(p);
-    fixed.delete(key(p.fixed[2].r, p.fixed[2].c));
-    const res = countSolutions(
-      { size: p.size, rows: p.rows, cols: p.cols, entry: p.entry, exit: p.exit, fixed },
-      5,
-    );
+    const input = solverInput(p);
+    input.fixed.delete(key(p.fixed[2].r, p.fixed[2].c));
+    const res = countSolutions(input, 5);
     check(res.count >= 1, `level ${level}: the true solution survives dropping a reveal`);
     checkedOne = true;
   }
@@ -790,20 +1059,45 @@ console.log("Connect Roads — core tests\n");
 // square and says "double tap" would teach a rule the game doesn't have.
 {
   let lessonChecks = 0;
-  LESSONS.forEach((lesson, li) => {
-    const p = lessonPuzzle(li);
-    const name = `lesson ${li + 1}`;
+  const courses: { name: string; lessons: Lesson[]; technique?: Technique }[] = [
+    { name: "lesson", lessons: LESSONS },
+    ...TECHNIQUES.map((t) => ({ name: t.id, lessons: t.lessons, technique: t })),
+  ];
+  for (const course of courses) course.lessons.forEach((lesson, li) => {
+    const p = lessonPuzzle(lesson);
+    const name = `${course.name} ${li + 1}`;
     check(touchesEveryLine(p.rows, p.cols), `${name}: no clue is 0`);
-    const solved = countSolutions({
-      size: p.size, rows: p.rows, cols: p.cols, entry: p.entry, exit: p.exit, fixed: fixedMap(p),
-    });
+    const solved = countSolutions(solverInput(p));
     check(solved.count === 1, `${name}: has exactly one route`);
-    check(deduce(deduceInput(p, terminalCells(p)), 2).solved, `${name}: falls to counting alone`);
+    if (!course.technique) {
+      check(deduce(deduceInput(p, terminalCells(p)), 2).solved, `${name}: falls to counting alone`);
+    }
 
     let marks = initialMarks(p);
     if (lesson.claimed) for (const { r, c } of p.path) marks = withMark(marks, p.size, r, c, MARK_ROAD);
+    if (lesson.marks) {
+      // A board opened part-way through opens on the truth: every ✓ on it is
+      // road, every ✕ is empty, and the printed pieces are claimed.
+      check(lesson.marks.length === p.size * p.size, `${name}: its opening marks cover the board`);
+      marks = Uint8Array.from(lesson.marks, Number);
+      let truthful = true;
+      for (let i = 0; i < marks.length; i++) {
+        const road = isRoadCell(p, Math.floor(i / p.size), i % p.size);
+        if ((marks[i] === MARK_ROAD && !road) || (marks[i] === MARK_BLOCKED && road)) truthful = false;
+        if (marks[i] > MARK_BLOCKED) truthful = false;
+      }
+      check(truthful, `${name}: opens on marks that are all true`);
+      check(p.fixed.every((f) => markAt(marks, p.size, f.r, f.c) === MARK_ROAD), `${name}: its printed pieces start claimed`);
+    }
+    if (course.technique) teaches(course.technique, lesson, p, marks, name);
     for (const step of lesson.steps) {
       const g = step.gesture;
+      if (g?.kind === "square") {
+        check(
+          g.cell.r >= 0 && g.cell.c >= 0 && g.cell.r < p.size && g.cell.c < p.size,
+          `${name}: points at a real square`,
+        );
+      }
       if (g?.kind === "point") {
         const clue = g.axis === "col" ? p.cols[g.index] : p.rows[g.index];
         check(clue > 0 && g.index < p.size, `${name}: points at a real clue`);
@@ -851,6 +1145,212 @@ console.log("Connect Roads — core tests\n");
     check(deductionComplete(p, marks), `${name}: ends with every road square found`);
   });
   check(lessonChecks > 0, "the tutorial has steps");
+
+  // Each trick arrives just before the first board that can't be done without
+  // it — not one level late (the player met the wall untaught) and not early
+  // (taught a rule nothing asks for yet). Rebuild the bank and this says where
+  // the lessons have to move to.
+  for (const t of TECHNIQUES) {
+    let first = 0;
+    for (let level = 1; level <= LEVEL_COUNT && !first; level++) {
+      const p = puzzleForLevel(level);
+      // A rule is needed where the tier below it no longer finishes a board; a
+      // twist where a board first carries it.
+      const needs =
+        t.kind === "rule"
+          ? !deduce(deduceInput(p), (t.tier - 1) as Tier).solved
+          : t.id === "scenery"
+            ? (p.scenery?.length ?? 0) > 0
+            : (p.fog?.index.length ?? 0) > 0;
+      if (needs) first = level;
+    }
+    check(
+      first === t.firstLevel,
+      `"${t.name}" is shown before level ${t.firstLevel}, the first board that needs it (found ${first})`,
+    );
+  }
+  check(
+    TECHNIQUES.every((t, i) => i === 0 || TECHNIQUES[i - 1].firstLevel < t.firstLevel),
+    "the tricks are listed in the order the ladder needs them",
+  );
+  check(techniqueDue(1, []) === null, "level 1 needs no trick");
+  check(techniqueDue(2, [])?.id === "exits", "level 2 is preceded by two-ways-out");
+  check(techniqueDue(19, ["exits"]) === null, "nothing new is owed before level 20");
+  check(techniqueDue(60, [])?.id === "exits", "a player owed several tricks meets the first first");
+  check(
+    techniqueDue(LEVEL_COUNT, TECHNIQUES.map((t) => t.id)) === null,
+    "a player who has seen every trick is shown none again",
+  );
+}
+
+/**
+ * Everything a technique's lesson may and may not rely on, read with the engine
+ * the ladder is graded by. The lesson has to need *its* rule: open with nothing
+ * easier left to do; ask the player for exactly the squares that rule proves;
+ * and leave a rest the player can finish on their own with no more than the
+ * basics and two-ways-out — the new rule is the lesson, not the homework.
+ */
+function teaches(t: Technique, lesson: Lesson, p: Puzzle, marks: Marks, name: string) {
+  const n = p.size;
+  const input = deduceInput(p);
+  const known = new Int8Array(n * n).fill(UNKNOWN);
+  for (let i = 0; i < n * n; i++) {
+    if (marks[i] === MARK_ROAD) known[i] = ROAD;
+    else if (marks[i] === MARK_BLOCKED || isScenery(p, Math.floor(i / n), i % n)) known[i] = NO_ROAD;
+  }
+  if (t.kind === "twist") {
+    // A twist's lesson is about the board, not a rule: it has to carry its twist.
+    const carries = t.id === "scenery" ? (p.scenery?.length ?? 0) > 0 : (p.fog?.index.length ?? 0) >= 2;
+    check(carries, `${name}: its board carries "${t.name}"`);
+  } else {
+    check(
+      nextSteps(input, known, (t.tier - 1) as Tier).length === 0,
+      `${name}: opens with nothing easier than "${t.name}" left to do`,
+    );
+  }
+  const proved = nextSteps(input, known, t.tier);
+  // A rule's lesson has to need exactly that rule; a twist's asks for nothing past
+  // it, since the twist is the lesson rather than the reasoning.
+  check(
+    proved.length > 0 && proved.every((s) => (t.kind === "rule" ? s.tier === t.tier : s.tier <= t.tier)),
+    `${name}: "${t.name}" is the move the board needs`,
+  );
+  const road = new Set(proved.flatMap((s) => s.road.map((c) => c.r * n + c.c)));
+  const empty = new Set(proved.flatMap((s) => s.empty.map((c) => c.r * n + c.c)));
+
+  let asked = 0;
+  for (const step of lesson.steps) {
+    const goal = step.goal;
+    if (goal.kind === "solve" || goal.kind === "drive") break;
+    if (goal.kind === "claim") {
+      for (const c of goal.cells) {
+        check(road.has(c.r * n + c.c), `${name}: the square it asks to claim is one "${t.name}" proves`);
+        known[c.r * n + c.c] = ROAD;
+        asked++;
+      }
+    } else if (goal.kind === "cross") {
+      for (const c of goal.cells) {
+        check(empty.has(c.r * n + c.c), `${name}: the square it asks to rule out is one "${t.name}" proves`);
+        known[c.r * n + c.c] = NO_ROAD;
+        asked++;
+      }
+    }
+  }
+  check(asked > 0, `${name}: asks the player to use "${t.name}"`);
+
+  for (let round = 0; round < n * n; round++) {
+    const steps = nextSteps(input, known, 2);
+    if (!steps.length) break;
+    for (const st of steps) {
+      for (const c of st.road) known[c.r * n + c.c] = ROAD;
+      for (const c of st.empty) known[c.r * n + c.c] = NO_ROAD;
+    }
+  }
+  check(!known.includes(UNKNOWN), `${name}: the player's own turn needs nothing past two-ways-out`);
+}
+
+// --- 7. The daily road ------------------------------------------------------
+// One board a day for everyone, the week as its difficulty curve, and a streak.
+// Every baked day is held to what a shipped level is held to — single-shaped,
+// and deducible from its clues alone — within its weekday's cap.
+{
+  const t0 = performance.now();
+  check(DAILY_BANK.length === DAILY_WEEKS * 7, `the daily bank is ${DAILY_WEEKS} whole weeks`);
+  check(weekday(0) === 3, "1970-01-01 was a Thursday");
+  check(weekday(20721) === 4, "2026-09-25 was a Friday");
+  check(weekday(DAILY_EPOCH) === 0, "the daily bank starts on a Monday");
+  let aligned = true;
+  for (let d = DAILY_EPOCH - 800; d < DAILY_EPOCH + 1600; d += 11) {
+    if (bankIndex(d) % 7 !== weekday(d) || bankIndex(d) < 0 || bankIndex(d) >= DAILY_BANK.length) aligned = false;
+  }
+  check(aligned, "every day, before the bank and after it wraps, gets its own weekday's board");
+
+  // The player's own midnight turns the board over, not a server's.
+  check(today(new Date(2026, 8, 25, 23, 59)) === 20721, "a minute to midnight is still that day");
+  check(today(new Date(2026, 8, 26, 0, 1)) === 20722, "a minute past midnight is the next");
+
+  check(!isDaily(LEVEL_COUNT) && !isDaily(1000 + 50), "no ladder level or lesson id is a daily");
+  check(isDaily(dailyId(20721)) && dayOf(dailyId(20721)) === 20721, "a daily's id carries its day");
+  check(
+    dailyPuzzle(DAILY_EPOCH + 7 * DAILY_WEEKS).path.length === dailyPuzzle(DAILY_EPOCH).path.length &&
+      encodePuzzle(dailyPuzzle(DAILY_EPOCH + 7 * DAILY_WEEKS)) === DAILY_BANK[0],
+    "the bank wraps back to its first board",
+  );
+
+  const tiers: number[][] = WEEK.map(() => []);
+  DAILY_BANK.forEach((code, i) => {
+    const recipe = WEEK[i % 7];
+    const label = `daily ${i} (${WEEKDAYS[i % 7].slice(0, 3)})`;
+    const p = decodePuzzle(code, 1);
+    check(encodePuzzle(p) === code, `${label}: round-trips through the codec`);
+    check(p.size === recipe.size, `${label}: is its weekday's size`);
+    auditPuzzle(p, label);
+    const gate = deduce(deduceInput(p, terminalCells(p)), recipe.tier);
+    check(gate.solved, `${label}: deducible from its clues within its weekday's cap (T${recipe.tier})`);
+    let sound = true;
+    for (let k = 0; k < gate.state.length; k++) {
+      const road = p.solution[Math.floor(k / p.size)][k % p.size] !== EMPTY;
+      if ((gate.state[k] === ROAD) !== road) sound = false;
+    }
+    check(sound, `${label}: its deduction agrees with its solution`);
+    tiers[i % 7].push(tierNeeded(p));
+  });
+  // The week climbs: more of the later days need "try each way" than the early
+  // ones, and the first two never do.
+  const hard = tiers.map((ts) => ts.filter((t) => t >= 4).length);
+  check(hard[0] === 0 && hard[1] === 0, "Monday and Tuesday never need more than the basics");
+  check(hard[6] >= hard[2], "Sunday is at least as hard as Wednesday");
+
+  // The streak.
+  let r = recordDaily(NO_DAILY, 100, 3);
+  check(r.streak === 1 && r.last === 100 && r.best === 1, "a first road starts a streak of one");
+  r = recordDaily(r, 101, 2);
+  check(r.streak === 2 && r.best === 2, "the next day's road extends it");
+  r = recordDaily(r, 101, 3);
+  check(r.streak === 2 && r.stars[101] === 3, "building the same day again changes only its stars");
+  check(currentStreak(r, 101) === 2 && currentStreak(r, 102) === 2, "the streak survives until today is over");
+  check(currentStreak(r, 103) === 0, "a whole day missed ends it");
+  r = recordDaily(r, 103, 1);
+  check(r.streak === 1 && r.best === 2, "a gap restarts the streak at one, and the best stands");
+  r = recordDaily(r, 102, 3);
+  check(r.streak === 1 && r.last === 103 && r.stars[102] === 3, "an older day finished late can't rewind the streak");
+
+  // A daily teaches the tricks its own board needs, whatever the ladder has reached.
+  check(techniqueFor(1, []) === null, "a board that falls to counting needs no trick");
+  check(
+    techniqueFor(5, TECHNIQUES.filter((t) => t.kind === "rule").map((t) => t.id)) === null,
+    "a daily never brings a twist's lesson — no daily carries one",
+  );
+  check(techniqueFor(2, [])?.id === "exits", "a two-ways-out daily brings its lesson");
+  check(techniqueFor(4, ["exits"])?.id === "overlap", "a try-each-way daily brings its lesson");
+  check(techniqueFor(4, ["exits", "overlap"]) === null, "a daily needs no trick once they're learned");
+  console.log(`  daily: ${DAILY_BANK.length} boards audited in ${(performance.now() - t0).toFixed(0)}ms`);
+}
+
+// --- 8. The garage ---------------------------------------------------------------
+// Stars open paint jobs, and nothing else: the first is free, each costs more
+// than the last, and the last is reachable on the ladder — but not by accident.
+{
+  check(FLEETS[0].stars === 0, "the first paint job is everyone's");
+  check(new Set(FLEETS.map((f) => f.id)).size === FLEETS.length, "every paint job has its own id");
+  check(
+    FLEETS.every((f, i) => i === 0 || FLEETS[i - 1].stars < f.stars),
+    "each paint job costs more stars than the one before",
+  );
+  const most = FLEETS[FLEETS.length - 1].stars;
+  check(most <= LEVEL_COUNT * 3, `the last paint job is reachable (${most} of ${LEVEL_COUNT * 3} stars)`);
+  check(most > LEVEL_COUNT * 2, "the last paint job asks for mostly clean wins");
+  const hex = /^#[0-9A-F]{6}$/i;
+  check(
+    FLEETS.every((f) => f.paints.length === 5 && f.paints.every((p) => hex.test(p.body) && hex.test(p.edge) && hex.test(p.roof))),
+    "every fleet paints all five cars",
+  );
+  check(fleetById("no-such-fleet").id === "classic", "an unknown paint job falls back to the first");
+  check(isUnlocked(FLEETS[1], FLEETS[1].stars) && !isUnlocked(FLEETS[1], FLEETS[1].stars - 1), "a threshold opens exactly at its count");
+  check(newlyUnlocked(FLEETS[1].stars - 1, FLEETS[1].stars)?.id === FLEETS[1].id, "crossing a threshold announces its fleet");
+  check(newlyUnlocked(FLEETS[1].stars, FLEETS[1].stars + 1) === null, "a win that crosses nothing announces nothing");
+  check(newlyUnlocked(0, LEVEL_COUNT * 3)?.id === FLEETS[FLEETS.length - 1].id, "crossing several announces the biggest");
+  check(totalStars({ 1: 3, 2: 2, 7: 1 }) === 6, "stars are summed across the ladder");
 }
 
 // The drag has to be able to be wrong: if no board ever offered a push into a

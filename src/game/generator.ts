@@ -36,7 +36,7 @@
 // has already passed without them, no reveal can be doing the player's deduction.
 
 import { deduce, deduceInput, terminalCells, type Grade, type Tier } from "./deduce";
-import { countSolutions } from "./solver";
+import { countSolutions, type SolverInput } from "./solver";
 import {
   bit,
   DC,
@@ -50,6 +50,7 @@ import {
   opposite,
   S,
   W,
+  shownClues,
   type Coord,
   type Dir,
   type Piece,
@@ -191,6 +192,20 @@ export type GenerateOptions = {
    * one square is the tightest clue the board can now print.
    */
   minExtremeLines?: number;
+  /**
+   * Squares of scenery to print — rocks, pines, mountain lakes on squares the
+   * road misses. Scenery is *given* information (the player never has to rule
+   * those squares out), which is exactly why it pairs with fog: one hands facts
+   * over, the other takes some away, and the board is a different texture of
+   * puzzle from either.
+   */
+  scenery?: number;
+  /**
+   * Lines to hide under fog, all on one axis: 0, or at least 2. One alone would
+   * be no secret at all — the other axis sums to the road's length, so a single
+   * hidden count is that sum less the visible ones.
+   */
+  fog?: number;
 };
 
 /**
@@ -344,6 +359,9 @@ export function generateGraded(seed: number, opts: GenerateOptions): GradedPuzzl
   const minExtreme = opts.minExtremeLines ?? defaultExtremeLines(size);
   const minLen = Math.max(3, Math.round(size * size * minFill));
   const maxLen = Math.max(minLen + 1, Math.round(size * size * maxFill));
+  const sceneryCount = opts.scenery ?? 0;
+  const fogCount = opts.fog ?? 0;
+  if (fogCount === 1) throw new Error("fog hides at least two lines, or none");
 
   const rng = mulberry32(seed);
 
@@ -377,6 +395,18 @@ export function generateGraded(seed: number, opts: GenerateOptions): GradedPuzzl
       size, rows, cols, entry, exit, solution, path, fixed: reveals, seed,
     };
 
+    // Scenery goes down before any gate: it is part of the board the clues are
+    // read against, like the terminals, not a reveal made afterwards.
+    if (sceneryCount > 0) {
+      const onPath = new Set(path.map((p) => key(p.r, p.c)));
+      const spare: Coord[] = [];
+      for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) if (!onPath.has(key(r, c))) spare.push({ r, c });
+      }
+      if (spare.length < sceneryCount) continue;
+      draft.scenery = shuffled(spare, rng).slice(0, sceneryCount);
+    }
+
     // **The deducibility gate, on the terminals alone.** Nothing is revealed yet,
     // so passing here means the *clues* carry the puzzle. Everything after this
     // point can only make the board easier, which is what stops a reveal from
@@ -394,11 +424,30 @@ export function generateGraded(seed: number, opts: GenerateOptions): GradedPuzzl
       if (!gate.solved) continue;
     }
 
+    // **Fog, one line at a time, only while the gate still passes.** A line is
+    // hidden only if the board is still deducible without it, so fog can make a
+    // board harder but never unfair — the same promise the gate makes for every
+    // board, re-proved after each line goes under.
+    if (fogCount > 0) {
+      const axis = rng() < 0.5 ? "row" : "col";
+      const hidden: number[] = [];
+      for (const i of shuffled([...Array(size).keys()], rng)) {
+        if (hidden.length === fogCount) break;
+        const trial: Puzzle = { ...draft, fog: { axis, index: [...hidden, i].sort((a, b) => a - b) } };
+        const g = deduce(deduceInput(trial, terminalCells(trial)), maxTier < 4 ? maxTier : 4);
+        if (!g.solved) continue;
+        hidden.push(i);
+        gate = g;
+      }
+      if (hidden.length < fogCount) continue;
+      draft.fog = { axis, index: hidden.sort((a, b) => a - b) };
+    }
+
     const fixed = new Map<number, Piece>();
     fixed.set(key(entry.r, entry.c), solution[entry.r][entry.c]);
     fixed.set(key(exit.r, exit.c), solution[exit.r][exit.c]);
 
-    const base = { size, rows, cols, entry, exit };
+    const base = solverInput(draft);
     let res = countSolutions({ ...base, fixed });
     if (!res.exhausted) continue; // too slow to vouch for — try another walk
 
@@ -435,9 +484,7 @@ export function generateGraded(seed: number, opts: GenerateOptions): GradedPuzzl
       }
     }
 
-    const puzzle: Puzzle = {
-      size, rows, cols, entry, exit, solution, path, fixed: reveals, seed,
-    };
+    const puzzle: Puzzle = { ...draft, fixed: reveals };
     return { puzzle, grade: deduce(deduceInput(puzzle), maxTier).grade, gate: gate.grade };
   }
 
@@ -471,4 +518,21 @@ export function fixedMap(puzzle: Puzzle): Map<number, Piece> {
   const map = new Map<number, Piece>();
   for (const { r, c } of puzzle.fixed) map.set(key(r, c), puzzle.solution[r][c]);
   return map;
+}
+
+/**
+ * Everything the solver is told about a board, as the player is told it: the
+ * counts as shown (fog as `-1`), the printed pieces, and the scenery.
+ */
+export function solverInput(puzzle: Puzzle): SolverInput {
+  const { rows, cols } = shownClues(puzzle);
+  return {
+    size: puzzle.size,
+    rows,
+    cols,
+    entry: puzzle.entry,
+    exit: puzzle.exit,
+    fixed: fixedMap(puzzle),
+    blocked: new Set((puzzle.scenery ?? []).map(({ r, c }) => key(r, c))),
+  };
 }

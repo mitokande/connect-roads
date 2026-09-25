@@ -12,14 +12,15 @@
 // The lawn itself is not drawn here: `Board` paints the whole mown checker in
 // one layer underneath, so a bare cell costs nothing but a transparent view.
 
-import React, { useEffect, useRef } from "react";
-import { Animated, StyleSheet, View } from "react-native";
-import Svg, { Circle, Ellipse, G, Path, Rect, Text as SvgText } from "react-native-svg";
+import React from "react";
+import { StyleSheet, View } from "react-native";
+import Svg, { Circle, Path, Rect, Text as SvgText } from "react-native-svg";
 
+import type { RegionId } from "../game/levels";
 import type { Piece } from "../game/types";
-import { sound } from "../sound";
 import { font, theme } from "../theme";
 import { RoadPiece } from "./RoadPiece";
+import { sceneryKind, TownArt, townHash, townKind, TownGrow } from "./Town";
 
 export type CellProps = {
   size: number;
@@ -42,9 +43,17 @@ export type CellProps = {
   town?: boolean;
   delay?: number;
   seed?: number;
+  /** Which region's town grows here (`TOWNS`). */
+  region?: RegionId;
+  /**
+   * Printed scenery — a rock, pines, a lake — known empty from the start. It is
+   * drawn over everything else: no mark can land on it, and the town grows round
+   * it rather than on it.
+   */
+  scenery?: boolean;
 };
 
-function CellView({ size, r, c, piece, claimed, blocked, glow, wrong, town, delay, seed }: CellProps) {
+function CellView({ size, r, c, piece, claimed, blocked, glow, wrong, town, delay, seed, region, scenery }: CellProps) {
   return (
     <View
       pointerEvents="none"
@@ -59,8 +68,15 @@ function CellView({ size, r, c, piece, claimed, blocked, glow, wrong, town, dela
         },
       ]}
     >
-      {town ? (
-        <Town size={size} r={r} c={c} seed={seed ?? 0} delay={delay ?? 0} />
+      {scenery ? (
+        <TownArt size={size} kind={sceneryKind(townHash(r, c, (seed ?? 0) + 3))} h={townHash(c, r, seed ?? 0)} />
+      ) : town ? (
+        <TownGrow
+          size={size}
+          kind={townKind(region ?? "village", townHash(r, c, seed ?? 0))}
+          h={townHash(c, r, (seed ?? 0) + 7)}
+          delay={delay ?? 0}
+        />
       ) : piece !== null ? (
         <RoadPiece size={size} piece={piece} />
       ) : claimed ? (
@@ -141,167 +157,6 @@ export function CrossGlyph({ size: s }: { size: number }) {
 }
 
 // --- the town ---------------------------------------------------------------
-
-/** A tiny deterministic hash, so the same won board always builds the same town. */
-function hash(r: number, c: number, seed: number) {
-  let h = (r * 73856093) ^ (c * 19349663) ^ (seed * 83492791);
-  h = Math.imul(h ^ (h >>> 13), 0x5bd1e995);
-  return ((h ^ (h >>> 15)) >>> 0) / 4294967296;
-}
-
-/** A town square with no entrance animation — for scenery outside the board. */
-export function TownArt({ size: s, kind, h }: { size: number; kind: "house" | "trees" | "pond" | "garden"; h: number }) {
-  return (
-    <Svg width={s} height={s}>
-      {kind === "house" ? (
-        <House s={s} h={h} />
-      ) : kind === "trees" ? (
-        <Trees s={s} h={h} />
-      ) : kind === "pond" ? (
-        <Pond s={s} />
-      ) : (
-        <Garden s={s} h={h} />
-      )}
-    </Svg>
-  );
-}
-
-function Town({ size: s, r, c, seed, delay }: { size: number; r: number; c: number; seed: number; delay: number }) {
-  const grow = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const t = setTimeout(() => sound.pop(), delay + 60);
-    const anim = Animated.sequence([
-      Animated.delay(delay),
-      Animated.spring(grow, { toValue: 1, friction: 5, tension: 120, useNativeDriver: true }),
-    ]);
-    anim.start();
-    return () => {
-      clearTimeout(t);
-      anim.stop();
-    };
-  }, [grow, delay]);
-
-  const h = hash(r, c, seed);
-  const h2 = hash(c, r, seed + 7);
-  const kind = h < 0.46 ? "house" : h < 0.8 ? "trees" : h < 0.9 ? "pond" : "garden";
-
-  return (
-    <Animated.View
-      style={{
-        width: s,
-        height: s,
-        opacity: grow.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0, 1, 1] }),
-        transform: [{ scale: grow.interpolate({ inputRange: [0, 1], outputRange: [0.2, 1] }) }],
-      }}
-    >
-      <Svg width={s} height={s}>
-        {kind === "house" ? (
-          <House s={s} h={h2} />
-        ) : kind === "trees" ? (
-          <Trees s={s} h={h2} />
-        ) : kind === "pond" ? (
-          <Pond s={s} />
-        ) : (
-          <Garden s={s} h={h2} />
-        )}
-      </Svg>
-    </Animated.View>
-  );
-}
-
-/** A house from above: its roof, split along the ridge into a lit and a shaded half. */
-function House({ s, h }: { s: number; h: number }) {
-  const roof = theme.roofs[Math.floor(h * theme.roofs.length) % theme.roofs.length];
-  const wide = h > 0.5;
-  const w = s * (wide ? 0.66 : 0.5);
-  const d = s * (wide ? 0.5 : 0.62);
-  const x = (s - w) / 2;
-  const y = (s - d) / 2;
-  const sw = Math.max(1, s * 0.025);
-  return (
-    <G>
-      <Rect x={x + s * 0.05} y={y + s * 0.06} width={w} height={d} rx={s * 0.05} fill="#000" opacity={0.18} />
-      <Rect x={x} y={y} width={w} height={d} rx={s * 0.05} fill={roof} stroke={theme.text} strokeOpacity={0.35} strokeWidth={sw} />
-      {wide ? (
-        <Rect x={x} y={y + d / 2} width={w} height={d / 2} rx={s * 0.05} fill="#000" opacity={0.14} />
-      ) : (
-        <Rect x={x + w / 2} y={y} width={w / 2} height={d} rx={s * 0.05} fill="#000" opacity={0.14} />
-      )}
-      {wide ? (
-        <Path d={`M ${x + sw},${y + d / 2} L ${x + w - sw},${y + d / 2}`} stroke="#FFFFFF" strokeOpacity={0.5} strokeWidth={sw} />
-      ) : (
-        <Path d={`M ${x + w / 2},${y + sw} L ${x + w / 2},${y + d - sw}`} stroke="#FFFFFF" strokeOpacity={0.5} strokeWidth={sw} />
-      )}
-      {/* chimney */}
-      <Rect x={x + w * 0.68} y={y + d * 0.14} width={s * 0.08} height={s * 0.08} rx={s * 0.01} fill="#8A5A36" />
-    </G>
-  );
-}
-
-function Tree({ x, y, r }: { x: number; y: number; r: number }) {
-  return (
-    <G>
-      <Ellipse cx={x + r * 0.25} cy={y + r * 0.35} rx={r} ry={r * 0.9} fill="#000" opacity={0.16} />
-      <Circle cx={x} cy={y} r={r} fill={theme.bush} />
-      <Circle cx={x - r * 0.28} cy={y - r * 0.28} r={r * 0.55} fill={theme.bushLight} />
-    </G>
-  );
-}
-
-function Trees({ s, h }: { s: number; h: number }) {
-  const n = h < 0.33 ? 1 : h < 0.7 ? 2 : 3;
-  if (n === 1) return <Tree x={s * 0.5} y={s * 0.48} r={s * 0.24} />;
-  if (n === 2)
-    return (
-      <G>
-        <Tree x={s * 0.34} y={s * 0.36} r={s * 0.17} />
-        <Tree x={s * 0.64} y={s * 0.62} r={s * 0.2} />
-      </G>
-    );
-  return (
-    <G>
-      <Tree x={s * 0.3} y={s * 0.32} r={s * 0.14} />
-      <Tree x={s * 0.68} y={s * 0.34} r={s * 0.15} />
-      <Tree x={s * 0.47} y={s * 0.68} r={s * 0.17} />
-    </G>
-  );
-}
-
-function Pond({ s }: { s: number }) {
-  return (
-    <G>
-      <Ellipse cx={s / 2} cy={s / 2} rx={s * 0.34} ry={s * 0.27} fill="#4AA8D0" />
-      <Ellipse cx={s / 2} cy={s / 2} rx={s * 0.3} ry={s * 0.23} fill={theme.pond} />
-      <Ellipse cx={s * 0.42} cy={s * 0.43} rx={s * 0.1} ry={s * 0.04} fill="#FFFFFF" opacity={0.6} />
-      <Circle cx={s * 0.62} cy={s * 0.57} r={s * 0.055} fill={theme.bushLight} />
-    </G>
-  );
-}
-
-function Garden({ s, h }: { s: number; h: number }) {
-  const flowers = ["#FF7AA8", "#FFD23F", "#FFFFFF", "#FF9F43", "#B29BF6"];
-  const pts = [
-    [0.3, 0.3], [0.5, 0.26], [0.7, 0.32], [0.28, 0.52], [0.5, 0.5], [0.72, 0.54], [0.36, 0.72], [0.6, 0.72],
-  ];
-  return (
-    <G>
-      <Rect x={s * 0.16} y={s * 0.16} width={s * 0.68} height={s * 0.68} rx={s * 0.14} fill="#7A5236" opacity={0.35} />
-      {pts.map(([x, y], i) => (
-        <Circle
-          key={i}
-          cx={s * x}
-          cy={s * y}
-          r={s * 0.06}
-          fill={flowers[(i + Math.floor(h * 5)) % flowers.length]}
-          stroke="#FFFFFF"
-          strokeOpacity={0.6}
-          strokeWidth={Math.max(0.6, s * 0.012)}
-        />
-      ))}
-    </G>
-  );
-}
 
 const styles = StyleSheet.create({
   cell: {

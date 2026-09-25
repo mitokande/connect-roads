@@ -18,35 +18,63 @@ import React, { useEffect, useRef, useState } from "react";
 import { Animated, Easing, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
 import { foundTotal, roadTotal } from "../game/board";
+import { dayOf, isDaily, WEEKDAYS, weekday } from "../game/daily";
+import { fleetById } from "../game/garage";
 import { haptics } from "../haptics";
 import type { Game } from "../state/useGame";
 import { MAX_HEARTS } from "../state/useGame";
 import { useGameSounds } from "../state/useGameSounds";
 import { sound } from "../sound";
-import { font, radius, regionFor, shadow, theme } from "../theme";
+import { bandFor, regionForSize } from "../game/levels";
+import { font, radius, regionForLevel, shadow, theme } from "../theme";
 import { Board } from "./Board";
 import { IconButton } from "./Button";
 import { FailOverlay } from "./FailOverlay";
 import { HelpOverlay } from "./HelpOverlay";
+import { RestartConfirm } from "./RestartConfirm";
 import { Scenery } from "./Scenery";
 import { WinActions, WinConfetti, WinTitle } from "./WinCelebration";
 
 export function GameScreen({
   game,
   onExit,
+  onNext,
   onSettings,
 }: {
   game: Game;
   onExit: () => void;
+  /** The win's big button: the next level, by way of any trick it needs first. */
+  onNext: () => void;
   onSettings: () => void;
 }) {
   const [help, setHelp] = useState(false);
+  const [confirmRestart, setConfirmRestart] = useState(false);
+  // A question about one board never outlives it.
+  useEffect(() => setConfirmRestart(false), [game.level, game.failed, game.phase]);
   const { width, height } = useWindowDimensions();
   // Every noise the board makes, derived from what changed in it.
   useGameSounds(game);
   // Leave room for the header, banner and tools on a short phone.
   const boardWidth = Math.min(width - 20, 470, height - 300);
-  const region = regionFor(game.puzzle.size);
+  const daily = isDaily(game.level);
+  // A daily wears the accent rather than a region's colour: it is not a stop on
+  // the road trip, and the plate says which kind of board this is at a glance.
+  const plate = daily
+    ? {
+        color: theme.accent,
+        dark: theme.accentDark,
+        title: "Daily road",
+        sub: `${WEEKDAYS[weekday(dayOf(game.level))]} · ${game.puzzle.size}×${game.puzzle.size}`,
+      }
+    : (() => {
+        const region = regionForLevel(game.level);
+        return {
+          color: region.color,
+          dark: region.dark,
+          title: `Level ${game.level}`,
+          sub: `${region.name} · ${game.puzzle.size}×${game.puzzle.size}`,
+        };
+      })();
 
   // --- shake on a refused claim --------------------------------------------
   const shake = useRef(new Animated.Value(0)).current;
@@ -92,11 +120,9 @@ export function GameScreen({
         <IconButton onPress={onExit}>
           <Ionicons name="arrow-back" size={24} color={theme.text} />
         </IconButton>
-        <View style={[styles.plate, { backgroundColor: region.color, borderBottomColor: region.dark }]}>
-          <Text style={styles.plateLevel}>Level {game.level}</Text>
-          <Text style={styles.plateSub}>
-            {region.name} · {game.puzzle.size}×{game.puzzle.size}
-          </Text>
+        <View style={[styles.plate, { backgroundColor: plate.color, borderBottomColor: plate.dark }]}>
+          <Text style={styles.plateLevel}>{plate.title}</Text>
+          <Text style={styles.plateSub}>{plate.sub}</Text>
         </View>
         <View style={styles.headerRight}>
           <IconButton onPress={() => setHelp(true)}>
@@ -129,6 +155,7 @@ export function GameScreen({
               total={total}
               drawn={game.route.length}
               failed={game.failed}
+              tip={game.tip?.say ?? null}
             />
           )}
         </View>
@@ -150,7 +177,11 @@ export function GameScreen({
             route={game.route}
             phase={game.phase}
             width={boardWidth}
-            hint={game.hint}
+            paints={fleetById(game.progress.fleet).paints}
+            // A daily isn't on the road trip: it builds the town its size would.
+            region={daily ? regionForSize(game.puzzle.size) : bandFor(game.level).region}
+            pointAt={game.tip?.point}
+            pointLine={game.tip?.line}
             wrong={game.wrong}
             riding={game.riding}
             onRideDone={game.rideDone}
@@ -170,13 +201,15 @@ export function GameScreen({
 
         <View style={styles.tools}>
           {game.celebrate ? (
-            <WinActions game={game} onExit={onExit} />
+            <WinActions game={game} onExit={onExit} onNext={onNext} />
           ) : (
             <>
               <IconButton
                 size={52}
                 disabled={game.phase === "won"}
-                onPress={game.retry}
+                // Asks first whenever there is work to lose; a blank board just
+                // deals again.
+                onPress={() => (game.inProgress ? setConfirmRestart(true) : game.retry())}
               >
                 <Ionicons name="refresh" size={25} color={theme.text} />
               </IconButton>
@@ -199,6 +232,15 @@ export function GameScreen({
 
       {game.celebrate ? <WinConfetti /> : null}
       {game.failed ? <FailOverlay game={game} onExit={onExit} /> : null}
+      {confirmRestart ? (
+        <RestartConfirm
+          onRestart={() => {
+            setConfirmRestart(false);
+            game.retry();
+          }}
+          onCancel={() => setConfirmRestart(false)}
+        />
+      ) : null}
 
       {help ? <HelpOverlay onClose={() => setHelp(false)} /> : null}
     </View>
@@ -270,6 +312,7 @@ function Banner({
   total,
   drawn,
   failed,
+  tip,
 }: {
   phase: string;
   found: number;
@@ -277,17 +320,41 @@ function Banner({
   /** Cells of road already laid — the player may have started early. */
   drawn: number;
   failed: boolean;
+  /**
+   * A hint's reason, `*word*` in bold. It takes the instruction's place while it
+   * is up: the banner is for the one thing that matters right now, and while a
+   * hint is being followed, that is the hint.
+   */
+  tip: string | null;
 }) {
   // A new line gets a small hop, so a change of instruction is noticed.
   const hop = useRef(new Animated.Value(1)).current;
-  const key = failed ? "failed" : phase;
+  const showTip = !failed && phase !== "won" && !!tip;
+  const key = failed ? "failed" : showTip ? `tip:${tip}` : phase;
   useEffect(() => {
     hop.setValue(0.9);
     Animated.spring(hop, { toValue: 1, friction: 5, tension: 160, useNativeDriver: true }).start();
   }, [key, hop]);
 
   let body: React.ReactNode;
-  if (failed) {
+  if (showTip && tip) {
+    body = (
+      <View style={styles.tipRow}>
+        <Ionicons name="bulb" size={18} color={theme.goldDark} style={{ marginTop: 1 }} />
+        <Text style={[styles.banner, { flexShrink: 1 }]}>
+          {tip.split("*").map((part, i) =>
+            i % 2 ? (
+              <Text key={i} style={styles.bannerStrong}>
+                {part}
+              </Text>
+            ) : (
+              part
+            ),
+          )}
+        </Text>
+      </View>
+    );
+  } else if (failed) {
     body = <Text style={[styles.banner, { color: theme.dangerDark }]}>Out of hearts — your marks are still here</Text>;
   } else if (phase === "connect") {
     body = (
@@ -373,8 +440,11 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.panelEdge,
   },
   foundText: { fontFamily: font.bold, color: theme.text, fontSize: 17 },
+  // Tall enough for the usual banner — two lines and the meter — so a one-line
+  // hint coming and going doesn't re-centre the stage and jog the board under
+  // the player's finger.
   bannerWrap: {
-    minHeight: 70,
+    minHeight: 84,
     justifyContent: "center",
   },
   bubble: {
@@ -394,6 +464,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   bannerStrong: { fontFamily: font.bold, color: theme.accentDark },
+  tipRow: { flexDirection: "row", alignItems: "flex-start", gap: 7 },
   meter: {
     alignSelf: "stretch",
     height: 7,

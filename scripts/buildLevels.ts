@@ -17,15 +17,22 @@
 // The bank is regenerated wholesale, so re-running this after touching the
 // generator will change existing levels. That is fine before release and not
 // after — the tests pin the bank's contents, not the generator's output.
+//
+// **Or band by band:** `npm run levels:build -- 121 136` rebuilds only the bands
+// starting at those levels and copies every other line of the current bank
+// through byte for byte. That is how the ladder grows — new bands added at the
+// end — without touching a board anyone has already played.
 
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { encodePuzzle } from "../src/game/codec";
 import { ladderScore, type Grade } from "../src/game/deduce";
 import { generateGraded, withBonusReveals, type GradedPuzzle } from "../src/game/generator";
 import {
+  BANDS,
   bandIndex,
+  bandLevels,
   GRACE_LEVELS,
   LEVEL_COUNT,
   levelSeed,
@@ -76,25 +83,35 @@ const PROBE_ATTEMPTS = 1_200;
 
 type Candidate = GradedPuzzle;
 
-/** The levels of one size band, in ladder order. */
-function bandOf(level: number): number[] {
-  const size = sizeForLevel(level);
-  const levels: number[] = [];
-  for (let l = 1; l <= LEVEL_COUNT; l++) if (sizeForLevel(l) === size) levels.push(l);
-  return levels;
-}
-
 const banks = new Map<number, string>();
+/** The whole output line per level — kept as-is for bands not being rebuilt. */
+const kept = new Map<number, string>();
 const grades = new Map<number, Grade>();
 const footholds = new Map<number, number[]>();
 const t0 = performance.now();
-const seen = new Set<number>();
 
-for (let first = 1; first <= LEVEL_COUNT; first++) {
-  if (seen.has(first)) continue;
-  const levels = bandOf(first);
-  for (const l of levels) seen.add(l);
-  const size = sizeForLevel(first);
+// Which bands to build: the ones named on the command line, or all of them.
+const only = process.argv.slice(2).map(Number).filter((n) => n > 0);
+for (const n of only) {
+  if (!BANDS.some((b) => b.first === n)) throw new Error(`no band starts at level ${n}`);
+}
+if (only.length) {
+  const current = readFileSync(out, "utf8").split("\n");
+  for (const line of current) {
+    const m = line.match(/^ {2}"[^"]*", \/\/ (\d+):/);
+    if (m) kept.set(Number(m[1]), line);
+  }
+}
+
+for (const band of BANDS) {
+  const levels = bandLevels(band);
+  if (only.length && !only.includes(band.first)) {
+    for (const l of levels) {
+      if (!kept.has(l)) throw new Error(`level ${l} isn't in the current bank to keep`);
+    }
+    continue;
+  }
+  const size = band.size;
 
   // One board per slot, generated against that slot's difficulty dial. The dial
   // sweeps across the band, so the *pool itself* spans easy to hard rather than
@@ -124,6 +141,8 @@ for (let first = 1; first <= LEVEL_COUNT; first++) {
             maxTier: cap,
             minExtremeLines: floor,
             attempts: PROBE_ATTEMPTS,
+            scenery: band.scenery,
+            fog: band.fog,
           });
           if (!best || cand.grade.score > best.grade.score) best = cand;
         } catch {
@@ -152,7 +171,7 @@ for (let first = 1; first <= LEVEL_COUNT; first++) {
   // grade instead put a T5-by-clues board at level 90, which its own tests caught.
   picked.sort((a, b) => ladderScore(a.gate, a.grade) - ladderScore(b.gate, b.grade));
 
-  footholds.set(size, settled);
+  footholds.set(band.first, settled);
 
   levels.forEach((level, i) => {
     const chosen = picked[i];
@@ -175,10 +194,16 @@ for (let first = 1; first <= LEVEL_COUNT; first++) {
 
 const lines: string[] = [];
 for (let level = 1; level <= LEVEL_COUNT; level++) {
-  const g = grades.get(level)!;
+  const g = grades.get(level);
+  if (!g) {
+    lines.push(kept.get(level)!);
+    continue;
+  }
+  const band = BANDS.find((b) => bandLevels(b).includes(level))!;
+  const twist = [band.scenery ? "scenery" : "", band.fog ? "fog" : ""].filter(Boolean).join("+");
   lines.push(
     `  "${banks.get(level)}", // ${level}: ${sizeForLevel(level)}×${sizeForLevel(level)} ` +
-      `T${g.maxTier} score ${g.score}`,
+      `T${g.maxTier} score ${g.score}${twist ? ` ${twist}` : ""}`,
   );
 }
 
@@ -197,16 +222,12 @@ ${lines.join("\n")}
 writeFileSync(out, body);
 
 process.stdout.write(`\r  baked ${LEVEL_COUNT} levels in ${((performance.now() - t0) / 1000).toFixed(1)}s\n`);
-const bySize = new Map<number, number[]>();
-for (let l = 1; l <= LEVEL_COUNT; l++) {
-  const s = sizeForLevel(l);
-  if (!bySize.has(s)) bySize.set(s, []);
-  bySize.get(s)!.push(grades.get(l)!.maxTier);
-}
-for (const [size, tiers] of [...bySize].sort((a, b) => a[0] - b[0])) {
+for (const band of BANDS) {
+  const tiers = bandLevels(band).flatMap((l) => (grades.has(l) ? [grades.get(l)!.maxTier] : []));
+  if (!tiers.length) continue;
   const hist = [1, 2, 3, 4, 5].map((t) => `T${t}:${tiers.filter((x) => x === t).length}`).join(" ");
-  const f = footholds.get(size) ?? [];
+  const f = footholds.get(band.first) ?? [];
   process.stdout.write(
-    `  ${size}×${size}  ${hist}   footholds asked ${Math.max(...f)}→${Math.min(...f)}\n`,
+    `  ${band.region} (${band.size}×${band.size})  ${hist}   footholds asked ${Math.max(...f)}→${Math.min(...f)}\n`,
   );
 }

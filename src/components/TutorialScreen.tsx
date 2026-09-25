@@ -29,7 +29,14 @@ import {
   markAt,
   withMark,
 } from "../game/board";
-import { LESSONS, lessonPuzzle, type Goal, type TutorialStep } from "../game/tutorial";
+import {
+  LESSONS,
+  lessonPuzzle,
+  type Goal,
+  type Lesson,
+  type Technique,
+  type TutorialStep,
+} from "../game/tutorial";
 import { same, type Coord } from "../game/types";
 import { haptics } from "../haptics";
 import { boardFor, reduce, type Action, type GameState } from "../state/useGame";
@@ -55,10 +62,12 @@ const DRIVE_MS = 450;
 /** Tutorial boards are tiny; a full-length ride here is mostly waiting. */
 const RIDE_PACE = 0.6;
 
-function openLesson(index: number): GameState {
-  const puzzle = lessonPuzzle(index);
+function openLesson(lesson: Lesson, index: number): GameState {
+  const puzzle = lessonPuzzle(lesson);
   let marks: Uint8Array | undefined;
-  if (LESSONS[index].claimed) {
+  if (lesson.marks) {
+    marks = Uint8Array.from(lesson.marks, Number);
+  } else if (lesson.claimed) {
     marks = new Uint8Array(puzzle.size * puzzle.size);
     for (const { r, c } of puzzle.path) marks[r * puzzle.size + c] = MARK_ROAD;
   }
@@ -115,6 +124,11 @@ function handFor(step: TutorialStep, s: GameState, g: BoardGeometry): HandMove |
     g.gridY + c.r * g.cell + g.cell / 2,
   ];
 
+  if (gesture.kind === "square") {
+    const [x, y] = mid(gesture.cell);
+    return { kind: "point", x, y: y + g.cell * 0.28, rx: x, ry: y, ring: g.cell * 0.96 };
+  }
+
   if (gesture.kind === "point") {
     const col = gesture.axis === "col";
     const rx = col ? g.gridX + gesture.index * g.cell + g.cell / 2 : g.gutter / 2;
@@ -138,21 +152,36 @@ function handFor(step: TutorialStep, s: GameState, g: BoardGeometry): HandMove |
   return gesture.kind === "double" ? { kind: "double", x, y } : { kind: "tap", x, y };
 }
 
-export function TutorialScreen({ onDone }: { onDone: () => void }) {
+/**
+ * The basics (the default), or one technique's course. A course ends on a card
+ * naming the trick; `next` names the board it was shown on the way to ("Play
+ * level 20"), and the card's button goes there — without one (replayed from the
+ * help) it just closes.
+ */
+export function TutorialScreen({
+  technique,
+  next,
+  onDone,
+}: {
+  technique?: Technique;
+  next?: string;
+  onDone: () => void;
+}) {
   const { width, height } = useWindowDimensions();
   const boardWidth = Math.min(width - 28, 380, height - 330);
+  const lessons = technique ? technique.lessons : LESSONS;
 
   const [lesson, setLesson] = useState(0);
   const [stepIx, setStepIx] = useState(0);
   const [finished, setFinished] = useState(false);
-  const [game, setGame] = useState<GameState>(() => openLesson(0));
+  const [game, setGame] = useState<GameState>(() => openLesson(lessons[0], 0));
   const live = useRef(game);
   const commit = useCallback((s: GameState) => {
     live.current = s;
     setGame(s);
   }, []);
 
-  const step = LESSONS[lesson].steps[stepIx];
+  const step = lessons[lesson].steps[stepIx];
   const stepRef = useRef(step);
   stepRef.current = step;
 
@@ -251,17 +280,17 @@ export function TutorialScreen({ onDone }: { onDone: () => void }) {
 
   // --- progress ---------------------------------------------------------------
   const advance = useCallback(() => {
-    const steps = LESSONS[lesson].steps;
+    const steps = lessons[lesson].steps;
     if (stepIx + 1 < steps.length) {
       setStepIx(stepIx + 1);
-    } else if (lesson + 1 < LESSONS.length) {
+    } else if (lesson + 1 < lessons.length) {
       setLesson(lesson + 1);
       setStepIx(0);
-      commit(openLesson(lesson + 1));
+      commit(openLesson(lessons[lesson + 1], lesson + 1));
     } else {
       setFinished(true);
     }
-  }, [lesson, stepIx, commit]);
+  }, [lessons, lesson, stepIx, commit]);
 
   useEffect(() => {
     if (!isDone(step.goal, game)) return;
@@ -272,10 +301,10 @@ export function TutorialScreen({ onDone }: { onDone: () => void }) {
 
   // Flashes are transient, as in the game.
   useEffect(() => {
-    if (!game.wrong && !game.hint) return;
+    if (!game.wrong) return;
     const t = setTimeout(() => commit(reduce(live.current, { type: "CLEAR_FLASH" })), 700);
     return () => clearTimeout(t);
-  }, [game.wrong, game.hint, commit]);
+  }, [game.wrong, commit]);
 
   useEffect(
     () => () => {
@@ -321,8 +350,8 @@ export function TutorialScreen({ onDone }: { onDone: () => void }) {
       <View style={styles.header}>
         <View style={{ width: 70 }} />
         <View style={styles.dots}>
-          {[...LESSONS, null].map((_, i) => {
-            const at = finished ? LESSONS.length : lesson;
+          {[...lessons, null].map((_, i) => {
+            const at = finished ? lessons.length : lesson;
             return <View key={i} style={[styles.dot, i < at && styles.dotDone, i === at && styles.dotNow]} />;
           })}
         </View>
@@ -349,15 +378,29 @@ export function TutorialScreen({ onDone }: { onDone: () => void }) {
             { opacity: enter, transform: [{ scale: enter.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) }] },
           ]}
         >
-          <Recap
-            onPlay={onDone}
-            onAgain={() => {
-              setFinished(false);
-              setLesson(0);
-              setStepIx(0);
-              commit(openLesson(0));
-            }}
-          />
+          {technique ? (
+            <TechniqueCard
+              technique={technique}
+              next={next}
+              onPlay={onDone}
+              onAgain={() => {
+                setFinished(false);
+                setLesson(0);
+                setStepIx(0);
+                commit(openLesson(lessons[0], 0));
+              }}
+            />
+          ) : (
+            <Recap
+              onPlay={onDone}
+              onAgain={() => {
+                setFinished(false);
+                setLesson(0);
+                setStepIx(0);
+                commit(openLesson(lessons[0], 0));
+              }}
+            />
+          )}
         </Animated.View>
       ) : (
         <View style={styles.stage}>
@@ -471,6 +514,54 @@ function Recap({ onPlay, onAgain }: { onPlay: () => void; onAgain: () => void })
   );
 }
 
+/**
+ * The end of a technique's course: what the trick is called and the rule in one
+ * line, so the name the player carries away is attached to the move they just
+ * made — then on to the board that needs it.
+ */
+function TechniqueCard({
+  technique,
+  next,
+  onPlay,
+  onAgain,
+}: {
+  technique: Technique;
+  next?: string;
+  onPlay: () => void;
+  onAgain: () => void;
+}) {
+  return (
+    <View style={styles.card}>
+      <View style={styles.trickBadge}>
+        <Ionicons name="bulb" size={30} color={theme.text} />
+      </View>
+      <Text style={styles.trickKicker}>New trick</Text>
+      <Text style={styles.cardTitle}>{technique.name}</Text>
+      <Text style={styles.trickRule}>
+        {technique.rule.split("*").map((part, i) =>
+          i % 2 ? (
+            <Text key={i} style={styles.strong}>
+              {part}
+            </Text>
+          ) : (
+            part
+          ),
+        )}
+      </Text>
+      <Button
+        label={next ?? "Got it"}
+        size="lg"
+        onPress={onPlay}
+        style={{ marginTop: 16 }}
+        icon={next ? <Ionicons name="car-sport" size={24} color={theme.onAccent} /> : undefined}
+      />
+      <Pressable hitSlop={8} onPress={onAgain} style={{ marginTop: 12 }}>
+        <Text style={styles.again}>Watch again</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function RecapRow({
   art,
   strong,
@@ -562,6 +653,33 @@ const styles = StyleSheet.create({
     color: theme.text,
     textAlign: "center",
     marginBottom: 14,
+  },
+  trickBadge: {
+    alignSelf: "center",
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: theme.gold,
+    borderBottomWidth: 4,
+    borderBottomColor: theme.goldDark,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  trickKicker: {
+    fontSize: 14,
+    fontFamily: font.semi,
+    color: theme.textDim,
+    textAlign: "center",
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+  },
+  trickRule: {
+    fontSize: 17,
+    lineHeight: 24,
+    fontFamily: font.medium,
+    color: theme.text,
+    textAlign: "center",
   },
   recapRow: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 12 },
   tile: {

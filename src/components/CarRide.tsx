@@ -24,6 +24,7 @@ import { Animated, Easing, StyleSheet, View } from "react-native";
 import Svg, { Ellipse, Rect } from "react-native-svg";
 
 import { DC, DR, dirBetween, hasDir, type Dir, type Puzzle } from "../game/types";
+import type { Paint } from "../game/garage";
 import { theme } from "../theme";
 
 /**
@@ -112,12 +113,15 @@ export function CarRide({
   cell,
   onDone,
   pace = 1,
+  paints = theme.fleet,
 }: {
   puzzle: Puzzle;
   cell: number;
   onDone?: () => void;
   /** Scales the drive's duration — the tutorial runs it quicker than a level. */
   pace?: number;
+  /** The convoy's paint job, lead car first — the garage's choice. */
+  paints?: readonly Paint[];
 }) {
   const ride = useRef(new Animated.Value(0)).current;
 
@@ -182,7 +186,7 @@ export function CarRide({
         // where the leader was R − i·gap ago.
         const input = road.t.map((t) => t + road.gap * i);
         const common = { inputRange: input, extrapolate: "clamp" as const };
-        const paint = theme.fleet[i % theme.fleet.length];
+        const paint = paints[i % paints.length];
         return (
           <Animated.View
             key={i}

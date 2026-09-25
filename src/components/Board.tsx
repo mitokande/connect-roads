@@ -36,7 +36,9 @@ import Svg, { Ellipse, G, Path, Polygon, Rect } from "react-native-svg";
 import {
   connectStep,
   grabsRoad,
+  isGiven,
   lineOverCrossed,
+  lineSettled,
   MARK_BLOCKED,
   MARK_NONE,
   MARK_ROAD,
@@ -47,8 +49,13 @@ import {
   shownPiece,
   type Marks,
 } from "../game/board";
+import type { Line } from "../game/deduce";
+import type { Paint } from "../game/garage";
+import { regionForSize, type RegionId } from "../game/levels";
 import {
   dirBetween,
+  isFogged,
+  isScenery,
   key,
   same,
   type Coord,
@@ -89,6 +96,10 @@ export type BoardProps = {
   width: number;
   hint?: Coord | null;
   wrong?: Coord | null;
+  /** The squares a hint is about — ringed until the player has acted on it. */
+  pointAt?: Coord[];
+  /** The clue a hint's reason rests on. */
+  pointLine?: Line | null;
   onTap: (cell: Coord) => void;
   onClaim: (cell: Coord) => void;
   onPaint: (cell: Coord, value: number) => void;
@@ -99,6 +110,10 @@ export type BoardProps = {
   onRideDone?: () => void;
   /** Duration multiplier for the car ride; see `CarRide`. */
   ridePace?: number;
+  /** The convoy's paint job; see `CarRide`. */
+  paints?: readonly Paint[];
+  /** Which region's town grows on the board when it is won; by size if unset. */
+  region?: RegionId;
   /**
    * Drawn over the whole board, gutters included, and never touchable — the
    * tutorial's hand. It is handed the board's own measurements so it can point
@@ -120,6 +135,10 @@ export type BoardGeometry = {
 
 export function Board(props: BoardProps) {
   const { puzzle, marks, route, phase, width, hint, wrong, riding, onRideDone, ridePace } = props;
+  const pointAt = props.pointAt ?? [];
+  const pointLine = props.pointLine ?? null;
+  const pointed = (column: boolean, index: number) =>
+    !!pointLine && pointLine.column === column && pointLine.index === index;
   const n = puzzle.size;
 
   const gutter = Math.max(24, Math.min(36, width * 0.088));
@@ -185,7 +204,7 @@ export function Board(props: BoardProps) {
             return;
           }
           if (ph !== "deduce") return;
-          if (shownPiece(p, at.r, at.c) !== null) return; // a printed clue is fixed
+          if (isGiven(p, at.r, at.c)) return; // a printed piece or scenery is fixed
 
           const before = markAt(m, p.size, at.r, at.c);
           const prev = lastTap.current;
@@ -299,6 +318,8 @@ export function Board(props: BoardProps) {
           town={town}
           delay={town ? 350 + (r + c) * 70 : 0}
           seed={puzzle.seed}
+          region={props.region ?? regionForSize(n)}
+          scenery={isScenery(puzzle, r, c)}
         />,
       );
     }
@@ -314,11 +335,13 @@ export function Board(props: BoardProps) {
           <Clue
             key={c}
             value={clue}
-            done={colFound(puzzle, marks, c) >= clue}
+            done={lineSettled(puzzle, marks, c, true)}
             warn={lineOverCrossed(puzzle, marks, c, true)}
+            fogged={isFogged(puzzle, true, c)}
             size={cell}
             badge={clueSize}
             dim={celebrating}
+            pointed={pointed(true, c)}
           />
         ))}
       </View>
@@ -330,11 +353,13 @@ export function Board(props: BoardProps) {
             <Clue
               key={r}
               value={clue}
-              done={rowFound(puzzle, marks, r) >= clue}
+              done={lineSettled(puzzle, marks, r, false)}
               warn={lineOverCrossed(puzzle, marks, r, false)}
+              fogged={isFogged(puzzle, false, r)}
               size={cell}
               badge={clueSize}
               dim={celebrating}
+              pointed={pointed(false, r)}
               column
             />
           ))}
@@ -355,12 +380,15 @@ export function Board(props: BoardProps) {
             ) : null}
             {cells}
             {head && !riding ? <HeadRing at={head} cell={cell} /> : null}
+            {pointAt.map((at) => (
+              <PointRing key={key(at.r, at.c)} at={at} cell={cell} />
+            ))}
             {/* The start line goes once the car is away — there is nothing left
                 to start. The finish flag stays put, so both ends say what they
                 are with no instruction. */}
             {riding || phase === "won" ? null : <StartLine t={puzzle.entry} cell={cell} />}
             <FinishFlag t={puzzle.exit} cell={cell} />
-            {riding ? <CarRide puzzle={puzzle} cell={cell} onDone={onRideDone} pace={ridePace} /> : null}
+            {riding ? <CarRide puzzle={puzzle} cell={cell} onDone={onRideDone} pace={ridePace} paints={props.paints} /> : null}
           </View>
           <Terminal t={puzzle.entry} cell={cell} n={n} frame={frame} inward />
           <Terminal t={puzzle.exit} cell={cell} n={n} frame={frame} />
@@ -469,6 +497,74 @@ function HeadRing({ at, cell }: { at: Coord; cell: number }) {
   );
 }
 
+/**
+ * A hint's finger: an orange ring round each square the hint is about, and round
+ * the clue its reason rests on (`ClueRing`). Orange is the palette's "the next
+ * thing to do", and it is deliberately not the head's white — half the squares a
+ * hint rings are *empty* ones, and "a hint is on about this square" must never
+ * read as "the road goes here".
+ */
+function PointRing({ at, cell }: { at: Coord; cell: number }) {
+  const beat = usePulse();
+  const inset = Math.max(1.5, cell * 0.03);
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        position: "absolute",
+        left: at.c * cell + inset,
+        top: at.r * cell + inset,
+        width: cell - inset * 2,
+        height: cell - inset * 2,
+        borderRadius: cell * 0.24,
+        borderWidth: Math.max(3, cell * 0.075),
+        borderColor: theme.accent,
+        opacity: beat.interpolate({ inputRange: [0, 1], outputRange: [1, 0.55] }),
+        transform: [{ scale: beat.interpolate({ inputRange: [0, 1], outputRange: [1, 0.9] }) }],
+      }}
+    />
+  );
+}
+
+function ClueRing({ badge }: { badge: number }) {
+  const beat = usePulse();
+  const d = badge + 12;
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        position: "absolute",
+        width: d,
+        height: d,
+        borderRadius: d / 2,
+        borderWidth: 3,
+        borderColor: theme.accent,
+        opacity: beat.interpolate({ inputRange: [0, 1], outputRange: [1, 0.55] }),
+        transform: [{ scale: beat.interpolate({ inputRange: [0, 1], outputRange: [1, 0.88] }) }],
+      }}
+    />
+  );
+}
+
+/**
+ * A slow in-and-out. Each ring runs its own, but a hint's rings all mount in the
+ * same frame, so they beat together.
+ */
+function usePulse() {
+  const beat = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(beat, { toValue: 1, duration: 520, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(beat, { toValue: 0, duration: 520, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [beat]);
+  return beat;
+}
+
 function Clue({
   value,
   done,
@@ -476,6 +572,8 @@ function Clue({
   size,
   badge,
   dim,
+  pointed,
+  fogged,
   column,
 }: {
   value: number;
@@ -487,13 +585,36 @@ function Clue({
   badge: number;
   /** The board is won — there is nothing left to count. */
   dim?: boolean;
+  /** A hint's reason rests on this line. */
+  pointed?: boolean;
+  /** The count is hidden: the sign is a cloud with a ?, and says nothing else. */
+  fogged?: boolean;
   column?: boolean;
 }) {
-  const bg = warn ? theme.danger : done ? theme.good : theme.panel;
-  const ink = warn || done ? theme.onDark : theme.text;
-  const edge = warn ? theme.dangerDark : done ? theme.goodDark : theme.panelEdge;
+  const box = [column ? { height: size } : { width: size }, styles.clue, dim && styles.dim];
+  const ring = pointed ? <ClueRing badge={badge} /> : null;
+  if (fogged) {
+    return (
+      <View style={box}>
+        {ring}
+        <FogSign badge={badge} />
+      </View>
+    );
+  }
+  if (warn) {
+    return (
+      <View style={box}>
+        {ring}
+        <WarningSign value={value} badge={badge} />
+      </View>
+    );
+  }
+  const bg = done ? theme.good : theme.panel;
+  const ink = done ? theme.onDark : theme.text;
+  const edge = done ? theme.goodDark : theme.panelEdge;
   return (
-    <View style={[column ? { height: size } : { width: size }, styles.clue, dim && styles.dim]}>
+    <View style={box}>
+      {ring}
       <View
         style={{
           width: badge,
@@ -518,6 +639,102 @@ function Clue({
           {value}
         </Text>
       </View>
+    </View>
+  );
+}
+
+/**
+ * A fogged clue: the sign is lost in cloud, and only a ? shows through.
+ *
+ * A misty grey-blue puff rather than the paper disc, so it never reads as a
+ * count that happens to be unset; and it never turns green or red — either would
+ * tell the player what the count is, which is the one thing fog keeps.
+ */
+function FogSign({ badge }: { badge: number }) {
+  const w = badge + 6;
+  const h = badge;
+  return (
+    <View style={{ width: w, height: h, alignItems: "center", justifyContent: "center" }}>
+      <Svg width={w} height={h} style={StyleSheet.absoluteFill}>
+        <Ellipse cx={w * 0.3} cy={h * 0.58} rx={w * 0.26} ry={h * 0.3} fill={theme.fog} />
+        <Ellipse cx={w * 0.55} cy={h * 0.42} rx={w * 0.3} ry={h * 0.36} fill={theme.fog} />
+        <Ellipse cx={w * 0.74} cy={h * 0.6} rx={w * 0.22} ry={h * 0.28} fill={theme.fog} />
+        <Ellipse cx={w * 0.5} cy={h * 0.68} rx={w * 0.4} ry={h * 0.2} fill={theme.fog} />
+      </Svg>
+      <Text
+        style={{
+          fontSize: Math.max(12, badge * 0.55),
+          lineHeight: Math.max(14, badge * 0.66),
+          fontFamily: font.bold,
+          color: theme.fogInk,
+          includeFontPadding: false,
+          marginTop: badge * 0.06,
+        }}
+      >
+        ?
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * An over-crossed clue: a road **warning sign**, not a red disc.
+ *
+ * Settled and over-crossed used to differ by colour alone — green against red,
+ * the one pair the commonest colour blindness can't tell apart — and on a board
+ * whose whole bargain is that what it shows can be trusted, a warning some
+ * players can't see is no warning. A shape says it to everyone, and the red-rimmed
+ * triangle is the sign every road already uses for "something is wrong ahead".
+ *
+ * It stays inside the gutter: the round sign is at most `gutter − 6` across, and
+ * the triangle takes exactly those 6 back, so nothing shifts when a clue flips.
+ * The digit sits low, where the triangle is wide enough to hold it.
+ */
+function WarningSign({ value, badge }: { value: number; badge: number }) {
+  const w = badge + 6;
+  const tall = w * 0.87; // equilateral
+  const drop = 2.5; // the bottom edge every sign on the board stands on
+  const rim = Math.max(2, badge * 0.11);
+  const inset = rim / 2 + 0.5;
+  const tri = (dy: number) =>
+    `${w / 2},${inset + dy} ${w - inset},${tall - inset + dy} ${inset},${tall - inset + dy}`;
+  const fontSize = Math.max(11, badge * 0.5);
+  const lineHeight = fontSize * 1.2;
+  const mid = inset + 0.62 * (tall - 2 * inset);
+  return (
+    <View style={{ width: w, height: tall + drop }}>
+      <Svg width={w} height={tall + drop} style={StyleSheet.absoluteFill}>
+        <Polygon
+          points={tri(drop)}
+          fill={theme.dangerDark}
+          stroke={theme.dangerDark}
+          strokeWidth={rim}
+          strokeLinejoin="round"
+        />
+        <Polygon
+          points={tri(0)}
+          fill={theme.panel}
+          stroke={theme.danger}
+          strokeWidth={rim}
+          strokeLinejoin="round"
+        />
+      </Svg>
+      <Text
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          top: mid - lineHeight / 2,
+          textAlign: "center",
+          fontSize,
+          lineHeight,
+          fontFamily: font.bold,
+          color: theme.text,
+          includeFontPadding: false,
+        }}
+      >
+        {value}
+      </Text>
     </View>
   );
 }

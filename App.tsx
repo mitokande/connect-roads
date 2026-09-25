@@ -12,12 +12,17 @@ import { Platform, StyleSheet, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 import { GameScreen } from "./src/components/GameScreen";
+import { GarageOverlay } from "./src/components/GarageOverlay";
 import { HelpOverlay } from "./src/components/HelpOverlay";
 import { HomeScreen } from "./src/components/HomeScreen";
 import { LevelsScreen } from "./src/components/LevelsScreen";
 import { SettingsOverlay } from "./src/components/SettingsOverlay";
 import { SplashScreen } from "./src/components/SplashScreen";
 import { TutorialScreen } from "./src/components/TutorialScreen";
+import { dailyId, dailyPuzzle, dayOf, isDaily, tierNeeded, today } from "./src/game/daily";
+import { fleetById } from "./src/game/garage";
+import { LEVEL_COUNT } from "./src/game/levels";
+import { TECHNIQUES, techniqueDue, techniqueFor, type Technique } from "./src/game/tutorial";
 import { haptics } from "./src/haptics";
 import { sound } from "./src/sound";
 import { useBackHandler } from "./src/hooks/useBackHandler";
@@ -45,6 +50,12 @@ export default function App() {
   // to know, so it is an overlay rather than a fourth `Screen`.
   const [splash, setSplash] = useState(true);
   const [help, setHelp] = useState(false);
+  const [garage, setGarage] = useState(false);
+  /**
+   * The tutorial screen shows the basics unless this is set: a technique's
+   * course, and the level it is on the way to (none when replayed from the help).
+   */
+  const [course, setCourse] = useState<{ technique: Technique; level?: number } | null>(null);
 
   useEffect(() => {
     if (ready) NativeSplash.hideAsync().catch(() => {});
@@ -73,13 +84,39 @@ export default function App() {
     sound.setMusic(game.progress.music);
   }, [game.progress.music]);
 
-  const play = useCallback(
-    (level: number) => {
+  /**
+   * Open a board — a ladder level, or a daily — unless it needs a trick the
+   * player hasn't been shown, in which case the trick comes first and the board
+   * after it. The ladder knows its tricks by level; a daily is asked what its own
+   * board needs. `learned` is passed in rather than read from progress, because
+   * straight after a course the progress that records it hasn't rendered yet.
+   */
+  const open = useCallback(
+    (level: number, learned: readonly string[]) => {
+      const due = isDaily(level)
+        ? techniqueFor(tierNeeded(dailyPuzzle(dayOf(level))), learned)
+        : techniqueDue(level, learned);
+      if (due) {
+        setCourse({ technique: due, level });
+        setScreen("tutorial");
+        return;
+      }
+      setCourse(null);
       game.start(level);
       setScreen("game");
     },
     [game],
   );
+
+  const play = useCallback(
+    (level: number) => open(level, game.progress.learned),
+    [open, game.progress.learned],
+  );
+
+  const basics = useCallback(() => {
+    setCourse(null);
+    setScreen("tutorial");
+  }, []);
 
   useBackHandler(
     useCallback(() => {
@@ -91,6 +128,10 @@ export default function App() {
         setHelp(false);
         return true;
       }
+      if (garage) {
+        setGarage(false);
+        return true;
+      }
       if (settings) {
         setSettings(false);
         return true;
@@ -100,7 +141,7 @@ export default function App() {
         return true;
       }
       return false;
-    }, [splash, help, settings, screen]),
+    }, [splash, help, garage, settings, screen]),
   );
 
   if (!ready) return <View style={styles.root} />;
@@ -123,10 +164,12 @@ export default function App() {
               // first board; anyone past level 1 already knows them.
               onPlay={() =>
                 !game.progress.tutorialSeen && game.progress.unlockedLevel === 1
-                  ? setScreen("tutorial")
+                  ? basics()
                   : play(game.progress.unlockedLevel)
               }
               onLevels={() => setScreen("levels")}
+              onDaily={() => play(dailyId(today()))}
+              onGarage={() => setGarage(true)}
               onSettings={() => setSettings(true)}
               onHelp={() => setHelp(true)}
             />
@@ -134,8 +177,37 @@ export default function App() {
             <LevelsScreen
               unlockedLevel={game.progress.unlockedLevel}
               stars={game.progress.stars}
+              paint={fleetById(game.progress.fleet).paints[0]}
               onPick={play}
               onBack={() => setScreen("home")}
+            />
+          ) : screen === "tutorial" && course ? (
+            <TutorialScreen
+              // A fresh screen per course, so one course running straight into
+              // the next (a player owed two) starts from its own first step.
+              key={course.technique.id}
+              technique={course.technique}
+              next={
+                course.level === undefined
+                  ? undefined
+                  : isDaily(course.level)
+                    ? "Play today's road"
+                    : `Play level ${course.level}`
+              }
+              onDone={() => {
+                // Skipped counts as shown: it was offered, and it stays in the help.
+                const { id } = course.technique;
+                const learned = game.progress.learned.includes(id)
+                  ? game.progress.learned
+                  : [...game.progress.learned, id];
+                game.patch({ learned });
+                if (course.level) {
+                  open(course.level, learned);
+                } else {
+                  setCourse(null);
+                  setScreen("home");
+                }
+              }}
             />
           ) : screen === "tutorial" ? (
             <TutorialScreen
@@ -147,7 +219,12 @@ export default function App() {
           ) : (
             <GameScreen
               game={game}
-              onExit={() => setScreen("levels")}
+              // A daily belongs to the home screen, where it was opened from.
+              onExit={() => setScreen(isDaily(game.level) ? "home" : "levels")}
+              // After a daily, "next" is back on the road trip, where the player left it.
+              onNext={() =>
+                play(isDaily(game.level) ? game.progress.unlockedLevel : Math.min(LEVEL_COUNT, game.level + 1))
+              }
               onSettings={() => setSettings(true)}
             />
           )}
@@ -163,7 +240,7 @@ export default function App() {
             }}
             onTutorial={() => {
               setSettings(false);
-              setScreen("tutorial");
+              basics();
             }}
             onClose={() => setSettings(false)}
           />
@@ -173,8 +250,21 @@ export default function App() {
             onClose={() => setHelp(false)}
             onTutorial={() => {
               setHelp(false);
+              basics();
+            }}
+            techniques={TECHNIQUES.filter((t) => game.progress.learned.includes(t.id))}
+            onTechnique={(technique) => {
+              setHelp(false);
+              setCourse({ technique });
               setScreen("tutorial");
             }}
+          />
+        ) : null}
+        {garage ? (
+          <GarageOverlay
+            progress={game.progress}
+            onPick={(fleet) => game.patch({ fleet })}
+            onClose={() => setGarage(false)}
           />
         ) : null}
         {splash ? <SplashScreen onDone={() => setSplash(false)} /> : null}

@@ -19,6 +19,9 @@
 // anything out on the player's behalf (see CLAUDE.md, "Every cross is the
 // player's"), so a scan of the grid never has to sort whose marks are whose.
 
+import { FLEETS } from "./game/garage";
+import { bandFor, type RegionId } from "./game/levels";
+
 export const theme = {
   // --- the world around the board -------------------------------------------
   skyTop: "#6EC3F5",
@@ -95,14 +98,11 @@ export const theme = {
    */
   roadLit: "#FFE066",
 
-  /** The convoy that drives a finished board, lead car first. */
-  fleet: [
-    { body: "#FF5A5F", edge: "#C23A3F", roof: "#FF8C8F" },
-    { body: "#3FA7F5", edge: "#2379BD", roof: "#7CC4FA" },
-    { body: "#FFC83D", edge: "#CF9416", roof: "#FFDD85" },
-    { body: "#8E6CF0", edge: "#5E43B8", roof: "#B29BF6" },
-    { body: "#27B9A8", edge: "#15877A", roof: "#6ED6C9" },
-  ],
+  /**
+   * The convoy that drives a finished board, lead car first — the garage's first
+   * paint job, which every player starts with (`src/game/garage.ts`).
+   */
+  fleet: FLEETS[0].paints,
   carGlass: "#2B3346",
   carLamp: "#FFF6C8",
   tyre: "#23252E",
@@ -117,6 +117,9 @@ export const theme = {
   walls: ["#FFF3E0", "#FFE8C8", "#F4F1FF", "#E8F6FF"],
   trunk: "#8A5A36",
   pond: "#5EC8F2",
+  /** A fogged clue's cloud, and the ? that shows through it. */
+  fog: "#DCE4EF",
+  fogInk: "#5E6F8A",
 } as const;
 
 /** Font families. Custom fonts carry their weight in the name, not `fontWeight`. */
@@ -159,12 +162,15 @@ export const radius = {
 } as const;
 
 /** The ladder's regions — one per grid size, named for what gets built there. */
-export const REGIONS: Record<number, { name: string; tag: string; color: string; dark: string }> = {
-  4: { name: "Meadow Lane", tag: "Easy", color: "#3DBE5B", dark: "#279A43" },
-  5: { name: "Village Green", tag: "Medium", color: "#27B9A8", dark: "#16907F" },
-  6: { name: "Market Town", tag: "Tricky", color: "#3FA7F5", dark: "#2379BD" },
-  7: { name: "Riverside City", tag: "Hard", color: "#8E6CF0", dark: "#5E43B8" },
-  8: { name: "Metropolis", tag: "Expert", color: "#FF5A5F", dark: "#D63B41" },
+export const REGIONS: Record<RegionId, { name: string; tag: string; color: string; dark: string }> = {
+  meadow: { name: "Meadow Lane", tag: "Easy", color: "#3DBE5B", dark: "#279A43" },
+  village: { name: "Village Green", tag: "Medium", color: "#27B9A8", dark: "#16907F" },
+  market: { name: "Market Town", tag: "Tricky", color: "#3FA7F5", dark: "#2379BD" },
+  riverside: { name: "Riverside City", tag: "Hard", color: "#8E6CF0", dark: "#5E43B8" },
+  metropolis: { name: "Metropolis", tag: "Expert", color: "#FF5A5F", dark: "#D63B41" },
+  pass: { name: "Mountain Pass", tag: "Rocks & pines", color: "#C27C3A", dark: "#94591F" },
+  summit: { name: "Cloud Summit", tag: "Fog", color: "#7C93B8", dark: "#566D91" },
 };
 
-export const regionFor = (size: number) => REGIONS[size] ?? REGIONS[8];
+/** The region a ladder level is drawn in. */
+export const regionForLevel = (level: number) => REGIONS[bandFor(level).region];

@@ -7,6 +7,7 @@ import React from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 
+import type { Technique } from "../game/tutorial";
 import { HORZ, NE, SW } from "../game/types";
 import { font, overlayLift, radius, shadow, theme } from "../theme";
 import { Button } from "./Button";
@@ -19,10 +20,18 @@ const T = 46;
 export function HelpOverlay({
   onClose,
   onTutorial,
+  techniques = [],
+  onTechnique,
 }: {
   onClose: () => void;
   /** Offered where there is somewhere to go: the guided tutorial. */
   onTutorial?: () => void;
+  /**
+   * The tricks this player has been shown, each replayable. Only those: the help
+   * is a reference, not a preview of what the ladder will ask for later.
+   */
+  techniques?: Technique[];
+  onTechnique?: (technique: Technique) => void;
 }) {
   return (
     <Pressable style={styles.backdrop} onPress={onClose}>
@@ -46,7 +55,8 @@ export function HelpOverlay({
           </Rule>
           <Rule art={<ClueArt />} title="The numbers are counts">
             Each number says how many squares in that row or column hold road — not which ones. It
-            turns green once you've found them all, and red if you've ruled out too many.
+            turns green once you've found them all, and into a red warning sign if you've ruled out
+            too many.
           </Rule>
           <Rule
             art={
@@ -112,9 +122,39 @@ export function HelpOverlay({
             }
             title="Hints"
           >
-            Stuck? A hint claims one road square, or lays the next piece of road. Every new level you
-            clear earns another.
+            Stuck? A hint shows the next thing you can work out, and why — and points out a square
+            you've crossed out by mistake. Every new level you clear earns another.
           </Rule>
+          <Rule
+            art={
+              <Tile tone={theme.accent}>
+                <Ionicons name="calendar" size={24} color={theme.onAccent} />
+              </Tile>
+            }
+            title="Daily road"
+          >
+            A new board every day, the same for everyone — small on Monday, big by Sunday. Build it
+            on days in a row to grow your streak; each day's first build earns a hint.
+          </Rule>
+          {techniques.length ? <Text style={styles.section}>Tricks you've learned</Text> : null}
+          {techniques.map((t) => (
+            <Rule
+              key={t.id}
+              art={
+                <Tile tone={theme.gold}>
+                  <Ionicons name="sparkles" size={24} color={theme.text} />
+                </Tile>
+              }
+              title={t.name}
+            >
+              {t.rule.replace(/\*/g, "")}
+              {onTechnique ? (
+                <Text style={styles.replay} onPress={() => onTechnique(t)}>
+                  {"  "}Show me ›
+                </Text>
+              ) : null}
+            </Rule>
+          ))}
         </ScrollView>
 
         {onTutorial ? (
@@ -205,4 +245,14 @@ const styles = StyleSheet.create({
   clueText: { fontFamily: font.bold, fontSize: 18, color: "#FFFFFF", includeFontPadding: false },
   ruleTitle: { fontSize: 17, fontFamily: font.bold, color: theme.text, marginBottom: 1 },
   ruleBody: { fontSize: 14, lineHeight: 19.5, color: theme.textDim, fontFamily: font.regular },
+  section: {
+    fontSize: 13,
+    fontFamily: font.semi,
+    color: theme.textDim,
+    textTransform: "uppercase",
+    letterSpacing: 1.1,
+    marginTop: 4,
+    marginBottom: 10,
+  },
+  replay: { fontFamily: font.bold, color: theme.accentDark },
 });

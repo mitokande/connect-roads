@@ -3,8 +3,8 @@
 // The obvious way to do this is to put a `sound.claim()` next to every dispatch,
 // and it is wrong here for the same reason the haptics gave up on it: a claim can
 // arrive from a double tap, from the hint button, or from a drag that paved its
-// way into an unknown square, and a mark can be taken back by three different
-// gestures. Watching the *state* instead means every one of those routes makes
+// way into an unknown square, and a cross can be taken back by a tap or a
+// swipe. Watching the *state* instead means every one of those routes makes
 // the right noise exactly once, and a new route to the same outcome gets its
 // sound for free.
 //

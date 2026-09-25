@@ -13,7 +13,7 @@ pieces are printed on the board from the start (the two terminals), plus one or
 two more when the generator needs them to force a unique answer.
 
 Every shipped board has exactly **one** solution, and `npm test` re-proves that
-for all 120 of them from the clues alone.
+for all 150 of them from the clues alone.
 
 A road piece joins exactly two of a square's four edges, so there are six of
 them: two straights and four curves. Internally a piece is just a **2-bit mask**
@@ -77,9 +77,7 @@ find" — the game's own phase flip.
 Both gestures live on the same grid at the same time, so a touch has to belong
 to one of them. `grabsRoad` decides: a touch on the drawn road — or on the entry,
 before there is one — pays out road, and everything else marks a square. Since
-a road is only ever extended from its own end, no square is ever ambiguous. The
-side effect is that a claim under the road can't be un-claimed while the road is
-standing on it; drag the road back off it first.
+a road is only ever extended from its own end, no square is ever ambiguous.
 
 **A printed piece is immutable.** The two terminals and the uniqueness reveals
 are facts the board hands over at the start, and the road passing over one must
@@ -116,6 +114,13 @@ board is always true**, so the road can trust the claimed set completely and
 `connectStep` only has to police adjacency and the printed pieces. That is also
 what makes drawing road mid-deduction sound rather than a way to cheat.
 
+**And a claim is permanent.** A tap on a ✓ does nothing (`TAP` in `useGame`). It
+used to take the claim back, which could only ever lose something — a square
+already proved, and the road standing on it, cut off at that cell. A tap is the
+most careless touch there is, and a claimed square is exactly where a player
+prods while reading the road through it. Claims therefore only ever accumulate,
+which is why `settle` no longer trims the road: nothing can vanish from under it.
+
 Three hearts. Losing the last one sets `failed`, which locks input and leaves the
 board exactly as the player built it rather than clearing it — at that moment the
 only interesting question is "where did I go wrong", and a wiped grid answers it
@@ -129,6 +134,71 @@ the route off the grid, and press **Try again**. Nothing else in the game reveal
 square the player hasn't earned: a refused claim reports that one square and no
 more, and a hint costs stock. The board can't be the exception. What is left on
 screen is the player's own reasoning, which is the actual evidence of the mistake.
+
+### Leaving never costs the board
+
+An 8×8 is ten minutes of work and a phone interrupts. Opening a level used to
+deal a fresh board every time, so the map button, the back gesture, a phone call
+or the app being swept away each threw the whole board away. Now every
+unfinished board is kept per level (`tracks.boards.v1`, apart from progress) and
+opening the level again picks it up. `src/game/save.ts` says what a save is;
+`useGame` says when.
+
+- **The hearts go with it.** A save that restored the marks but not the hearts
+  would make leaving a free refill — three more guesses on a board already
+  carrying the first three's answers. The one way back to three hearts is still
+  *Try again*, which still costs everything on the board.
+- **A heart is written at once.** Marks wait out a short delay so a swipe is one
+  write, but a lost heart can't: killing the app inside the delay would bring
+  the board back with the heart *and* the answer to the claim that cost it.
+- **Only a board in play is kept.** A lost board isn't (its *Try again* is fresh
+  anyway), nor a won one, nor one with nothing on it.
+- **A save is not trusted.** `restoreBoard` refuses a save naming a different
+  puzzle — the bank changes between builds — or asserting a ✓ on a square with no
+  road, since nothing may put an unchecked ✓ on the board. The road is drawn
+  again through `connectStep` (`replayRoute`) rather than copied in.
+
+Because leaving is now free, **the restart button asks first** (`RestartConfirm`)
+whenever there is anything on the board to lose. It is the one button left that
+destroys work, and it sits under the thumb next to the hint; the safe answer,
+*Keep going*, is the big one.
+
+### Hints say why
+
+A hint used to be an answer — one road square claimed, no reason given. That
+unsticks a board and teaches nothing, and the boards that stick people are the
+ones asking for a rule they were never shown: the tutorial covers counting, and
+most of the ladder needs more. Now a hint is **the next step a person could take**,
+found by the engine that grades the boards and said in one line in the banner:
+what follows, and from what (`src/game/hint.ts`).
+
+- **The engine is asked, not paraphrased.** `propagate` takes a `probe`: it then
+  reasons one round *without changing anything*, and records every application of
+  the cheapest rule that bites as a `Step` — which squares, and why (this line's
+  count, this square's ways out, every placement of this line agreeing…). Each
+  step is read against the board as it stands, so a reason never leans on a
+  square only another step settled out of sight. `nextSteps` is the entry point;
+  the probe is free when off, and all 600 grade readings are byte-identical with it.
+- **Mistakes first.** A ✕ on a road square is the one mistake the board lets
+  stand, and every step built on it is built on a false fact, so the first hint
+  on such a board points at it and claims the square instead.
+- **A green line counts as swept.** Its leftovers are empty and the sign already
+  says so; nobody should pay a hint to be told that.
+- **Road is claimed, empties are pointed at.** A hint may claim, as it always
+  could. It may not cross anything out — every ✕ is the player's — so it rings
+  the empty squares and the tip stays up until the player has crossed them
+  (`followTip`); anything else they do takes it down.
+- **Of equally easy steps, the nearest the road's end wins**, so the hint lands
+  where the reasoning was going.
+- **While connecting**, a hint lays the next square of road — and first winds a
+  wrong turn back to where it went wrong, the connect phase's only way to be stuck.
+- A hint is charged only when there is one to give (`useHint` asks the pure
+  reducer first).
+
+The rings are orange — the palette's "next thing to do" — and never the head's
+white: half the squares a hint rings are empty, and "a hint is about this square"
+must never read as "the road goes here". The banner's box is tall enough for its
+usual two lines, so a one-line hint coming and going never jogs the board.
 
 ### Every cross is the player's
 
@@ -154,10 +224,13 @@ Rendering) — no deduction is being done for anyone at that point, and the fini
 grid states the whole answer instead of trailing the squares that were never
 worth the tap.
 
-`lineOverCrossed` turns a clue red when the player has ruled out so much of a
-line that its count can no longer be met. Nothing is enforced — the notes stay
-wrong until the player says otherwise — but it catches a bad assumption before
-ten more moves get built on it.
+`lineOverCrossed` turns a clue into a red **warning sign** when the player has
+ruled out so much of a line that its count can no longer be met. Nothing is
+enforced — the notes stay wrong until the player says otherwise — but it catches
+a bad assumption before ten more moves get built on it. It is a *shape*, not just
+a colour: settled and over-crossed used to be a green disc and a red disc, the one
+pair the commonest colour blindness can't separate, so the warning is the road's
+own red-rimmed triangle (`WarningSign` in `Board.tsx`).
 
 ## Layout
 
@@ -167,19 +240,26 @@ src/game/                   pure, headless, no React — the whole rulebook
   types.ts                  directions, pieces as bitmasks, Puzzle
   solver.ts                 exhaustive path search; the *shape* uniqueness referee
   deduce.ts                 the five human rules; the *solvability* gate + grader
+  hint.ts                   hints that say why: the engine's next step, in one line
   generator.ts              seeded generate-and-test, gated on both
   codec.ts                  compact puzzle serialisation
   levelData.ts              GENERATED — the baked level bank
+  daily.ts                  the daily road: day numbering, the week's recipes, the streak
+  dailyData.ts              GENERATED — the baked daily bank (52 weeks)
   levels.ts                 the ladder: level → size, seed, puzzle
-  tutorial.ts               the tutorial's four lesson boards and their script
+  tutorial.ts               the tutorial's lessons, and the technique courses
   board.ts                  rules of play (marks, clue tallies, route legality)
+  garage.ts                 the convoy's paint jobs and the stars that open them
+  save.ts                   a board in progress: what is kept, and what is refused
   runTests.ts               npm test
-src/state/useGame.ts        board reducer + AsyncStorage progress
+src/state/useGame.ts        board reducer + AsyncStorage progress and unfinished boards
 src/state/useGameSounds.ts  what the board sounds like, derived from what changed
 src/components/             Board, Cell, RoadPiece, CarRide, screens, overlays
   Scenery.tsx               sky, sun, drifting clouds, hills — every screen's backdrop
   Diorama.tsx               the home screen's looping mini-board with traffic
-  TutorialScreen.tsx        the hand-guided tutorial, gated through the real reducer
+  Town.tsx                  the town that grows round the road, region by region
+  GarageOverlay.tsx         the paint jobs, opened from the home screen's star count
+  TutorialScreen.tsx        the hand-guided tutorial and courses, gated through the real reducer
   GuideHand.tsx             the animated finger that demonstrates each gesture
   Logo.tsx / Display.tsx    the wordmark, and outlined display type
 src/haptics.ts              vibration, one switch
@@ -188,6 +268,7 @@ src/theme.ts                palette, fonts, regions; colour is assigned by funct
 assets/sfx/                 GENERATED — the baked sounds and music
 assets/images/              GENERATED — icon, adaptive icon, splash, favicon
 scripts/buildLevels.ts      npm run levels:build
+scripts/buildDaily.ts       npm run daily:build
 scripts/buildSounds.ts      npm run sfx:build
 scripts/buildArt.ts         npm run art:build
 ```
@@ -256,7 +337,7 @@ even* — the parity half alone kills about half the branches), and printed piec
 ran out, and the generator throws such candidates away rather than shipping a
 board it can't vouch for.
 
-**The bank, and why it is *sorted*.** `npm run levels:build` bakes all 120 into
+**The bank, and why it is *sorted*.** `npm run levels:build` bakes every level into
 `src/game/levelData.ts` as one line each (~66s), and `puzzleForLevel` parses
 instead of searching — building an 8×8 that is both deducible and single-shaped
 takes around half a second, which is a frozen screen on a phone.
@@ -341,8 +422,9 @@ from each edge to the plot, so two claims side by side already look as if they
 could join; a ✕ is chalk-white with a shadow so it stands off the lawn. The square
 where the next road goes is tinted and ringed by `HeadRing`, which breathes — the
 only thing on an untouched board that moves, so the eye goes there first. Clues
-are round signs above and beside the tray: paper, green when settled, red when
-over-crossed.
+are round signs above and beside the tray: paper, green when settled — and a
+red-rimmed warning triangle when over-crossed, sized to take back exactly the
+gutter the disc leaves spare, so nothing shifts when a clue flips.
 
 The two terminals are simply where the road runs **out through the wooden
 frame** (`Terminal`), with a chevron painted on it pointing the way the car
@@ -395,17 +477,36 @@ light has arrived is native, and so is the confetti.
 
 **The town grows round the road.** Every off-route square of a won board is
 proved empty by then (`crossOutRest` has already written it in), and instead of a
-sheet of ✕ it is built on: a house, trees, a pond or a garden, chosen by a hash of
-the square and the puzzle's seed so the same board always builds the same town,
-springing up in a stagger that spreads diagonally across the tray. The grid still
-states the whole answer — road where the road is, town everywhere else — it just
-says it the way the game would like to be remembered.
+sheet of ✕ it is built on, chosen by a hash of the square and the puzzle's seed so
+the same board always builds the same town, springing up in a stagger that spreads
+diagonally across the tray. The grid still states the whole answer — road where
+the road is, town everywhere else — it just says it the way the game would like to
+be remembered.
+
+**Each region builds its own town** (`TOWNS` in `Town.tsx`). The regions used to
+be a name and a colour on the map, and every won board grew the same four things,
+so "Metropolis" looked exactly like "Meadow Lane" at the one moment it mattered.
+Now the meadows are fields, barns, hay and sheep; the village cottages, gardens
+and a well; the market town shops under striped awnings and market stalls; the
+riverside terraces and canals with boats; the city rooftops, helipads and
+fountains — the board size says which. Every piece is a toy seen from above in
+the tray's own hand (offset shadow, a lit and a shaded half, outlines at a third
+of the ink), so a barn and a tower sit on the same lawn without either looking
+pasted in. A market stall drawn as a pitched canopy in four triangles read as a
+bow tie at board size, and is a striped awning instead.
 
 **The hearts become the stars.** The three heart slots in the HUD are the score:
 on a win the hearts still standing turn into stars one at a time, each with its
 own note a step higher (`sound.star`). Stars are recorded per level as a best
 (`progress.stars`) and shown on the map; they are a record, not a rule —
-nothing reads them back into play. The rest of the celebration is dropped into
+nothing in play reads them. What they do open is **the garage**
+(`src/game/garage.ts`, reached by tapping the star count on the home screen):
+paint jobs for the convoy at star thresholds, from the free rainbow to a gold
+convoy at 360 of the ladder's 450. Stars are never spent; a threshold opens a
+fleet for good, and a win that crosses one says so under its title. A number
+with nowhere to go is a number players stop reading — this gives replaying a
+board for a cleaner win something to show for it, on the thing they watch after
+every board. The rest of the celebration is dropped into
 slots `GameScreen` already has (`WinCelebration.tsx`): the congratulation replaces
 the instruction banner, and the buttons replace the tools — one big **Level
 _n+1_** between a replay and the map. The title is absolutely positioned inside
@@ -417,6 +518,15 @@ bare screen and reads as the celebration breaking rather than finishing.
 **The level list is a road trip** (`LevelsScreen`): each grid size is a region
 with its own name and colour (`REGIONS` in `theme.ts`), and the levels are stops
 along one serpentine road through it, opening scrolled to wherever the car is.
+
+**The map keeps the towns the player built.** Each cleared stop puts a piece of
+its region's town on the lawn — beside the road on the way to the next stop, or
+inside the bend where the road turns a row — and a three-star clear puts a second
+under the stop, beneath its stars. Every spot sits *below* the road it belongs to:
+the first version used both sides, and a row's pieces below and the next row's
+above reached for the same patch of lawn between them. A region starts as bare
+lawn and fills in as it is played, so the map shows how far the player has come
+and how well, without another number on it.
 
 **Store art is generated too.** `npm run art:build` draws the icon, the Android
 adaptive icon, the splash mark and the favicon as SVG in `scripts/buildArt.ts`
@@ -482,6 +592,39 @@ double tap be answered with "twice, quickly". `npm test` plays every lesson by i
 own script and fails if one ever asks to claim an empty square, cross a road
 square, or drag a road that doesn't reach the flag.
 
+### Techniques are taught when they're needed
+
+The basics are counting, and counting carries a player exactly one level: level 2
+already needs "two ways out", level 20 the line-by-line trial the engine calls
+intersection, and level 113 a what-if. Nothing used to show any of it — most of
+the ladder asked for reasoning the game had never mentioned, and the only help
+for a stuck player was an answer.
+
+So each harder rule is a `Technique` (`TECHNIQUES` in `tutorial.ts`): a short
+course of one or two lessons, run by the same screen and the same reducer as the
+basics, shown **once, just before the first level that needs it** (`techniqueDue`,
+checked by `App`'s `open` on every way into a level — the map, Continue, and the
+win's next-level button, which is why that button now goes through the app). It
+ends on a card naming the trick, with the rule in one line and a button on to the
+level; the help then lists every trick the player has been shown, replayable.
+Skipping counts as shown. `progress.learned` records them.
+
+The lesson boards were found, not drawn: small boards searched with the engine
+for the moment where **the new rule is the only move left** — everything easier
+is already on the board (`Lesson.marks`), so the lesson opens part-way through —
+and after which the rest is easy enough to hand over as the player's turn.
+`npm test` holds each course to that:
+
+- the board opens on true marks with nothing easier than its rule left to do;
+- every square it asks for before the player's turn is one that rule proves;
+- the player's own turn needs nothing past two-ways-out;
+- `firstLevel` is exactly the first shipped board that can't be solved without
+  the rule — so rebuilding the bank either keeps the lessons in place or says
+  where they have to move.
+
+Pointing at a square (`Gesture` `square`) joined pointing at a clue, because a
+technique's reasons are about squares ("try the top one") as often as lines.
+
 ## Sound
 
 **The sounds are generated, not sourced.** `npm run sfx:build` synthesises all
@@ -516,8 +659,8 @@ properly. A floor of 28ms between plays stops a fast sweep rattling.
 
 **What makes a noise is decided by the state, not the call site**
 (`useGameSounds`). A claim can arrive from a double tap, from the hint button, or
-from a drag that paved into an unknown square; a mark can be taken back three
-ways. Watching `foundTotal`/`blockedTotal`/`route.length`/`shake` instead means
+from a drag that paved into an unknown square; a cross can be taken back by a
+tap or a swipe. Watching `foundTotal`/`blockedTotal`/`route.length`/`shake` instead means
 every route to an outcome makes the right noise exactly once, and a new route
 gets its sound for free. Several things can move in one reducer pass — a push
 into the unknown claims a square *and* extends the road — so the rules are ranked
@@ -540,9 +683,13 @@ Two things that only bite off the web build, both worth keeping:
 
 ## The ladder
 
-120 levels: 4×4 (1–10), 5×5 (11–25), 6×6 (26–45), 7×7 (46–75), 8×8 (76–120).
-The first three levels of each new size get one bonus revealed piece — that is
-difficulty, not correctness, since both gates have already passed by then.
+150 levels in seven bands (`BANDS` in `levels.ts`): 4×4 (1–10), 5×5 (11–25),
+6×6 (26–45), 7×7 (46–75), 8×8 (76–120) — then two more 8×8 bands that change the
+game instead of the board, Mountain Pass (121–135) and Cloud Summit (136–150); see
+"The mountains". The first three levels of each band get one bonus revealed
+piece — that is difficulty, not correctness, since both gates have already passed
+by then. A band, not a size, is what a region is: two bands can share a size, so
+the map, the header plate and the town all read `bandFor(level).region`.
 
 **Within a band, difficulty ramps** (see the bank, above), and the ramp is what
 `npm test` checks — not that a board is hard, but that it is harder than the one
@@ -557,15 +704,87 @@ A level is nothing but a number: its size and seed both derive from it, so
 progress persists as a single integer. Clearing the newest level unlocks the
 next and pays one hint (capped at 9, starting stock 5). Replaying pays nothing.
 Alongside it, `progress.stars` keeps each level's best result (hearts left at the
-win) — display only.
+win) — a record for the map, and the currency of the garage's paint jobs.
 
 The board's restart button is exactly **Try again** without having lost first:
-a fresh board, full hearts. It gives nothing away that leaving and re-entering
-the level didn't already.
+a fresh board, full hearts. Since leaving a level now keeps its board, hearts and
+all, it is the *only* way back to three hearts, and it pays for them with
+everything on the board — which is why it asks first (see "Leaving never costs
+the board").
 
-Hints spend from persisted stock: during deduction one claims a road square
-(preferring the line closest to settled, so it lands where the reasoning was
-going); during connect it extends the route by one correct step.
+Hints spend from persisted stock (see "Hints say why" for what one does).
+
+## The mountains: scenery and fog
+
+The ladder grew the board from 4×4 to 8×8 and then stopped — a ninth size would
+shrink cells past what a thumb can hit, and a rectangle would touch every
+`size` in the code. So the last two bands keep the board and change the game.
+
+- **Scenery** (Mountain Pass, and Cloud Summit too): squares printed as rocks,
+  pines or a lake (`Puzzle.scenery`), off the road by construction. They are
+  *given* facts — the player never has to rule them out — and they read as
+  landscape, not as ✕, because every ✕ is the player's. The rules treat them like
+  printed pieces (`isGiven`): no mark lands on one, the road turns away from one
+  for free (`isUnknown`), and a line counts it as spent when deciding whether its
+  sign turns red.
+- **Fog** (Cloud Summit): some counts hidden under a cloud with a `?`
+  (`Puzzle.fog`). A fogged sign never turns green or red, since either would say
+  what the count is. Fog is always **on one axis and at least two lines**: the
+  other axis still sums to the road's length (so the HUD's total gives nothing
+  away), and one fogged line alone would be no secret — it would be that sum less
+  the visible ones.
+
+Scenery hands facts over and fog takes some back, which is why they come as a
+pair: the result is a different *texture* of puzzle, not just a harder one. The
+engine treats scenery as seeded empties and a fogged clue as `-1` (the solver
+never prunes on it; T1 and T4 skip it, and T4 skips a fogged crossing line when
+testing a placement). The solver can no longer count on pigeonhole to meet every
+line once one is fogged, so arrival checks each visible line outright — a check
+that can never fail on a classic board, which is how all 600 classic grade
+readings stayed byte-identical through the change.
+
+The generator lays scenery before any gate (it is part of the board, like the
+terminals) and adds fog **one line at a time, only while the deducibility gate
+still passes**, so fog can make a board harder but never unfair. Both are stored
+as two optional codec fields, left off every classic line — which is what let the
+two bands be baked with `npm run levels:build -- 121 136` and every line of 1–120
+come through byte for byte. Each band gets a twist lesson at its foot
+(`Technique` `kind: "twist"`), and no daily ever carries either twist.
+
+## The daily road
+
+The ladder is a thing a player finishes, and nothing in it asked anyone to come
+back *tomorrow*. The daily road does: one board a day, the same for everyone,
+unlocked once the first region is cleared (`DAILY_UNLOCK`), with a streak of days
+in a row and a hint paid the first time each day's road is built.
+
+**The week is the difficulty curve** (`WEEK` in `daily.ts`): Monday a 5×5 that
+falls to the basics, Tuesday a 6×6, then up through 6×6 and 7×7 boards that may
+need "try each way" to Saturday's and Sunday's 8×8 — Sunday drawing twice the
+candidates and keeping the hardest. Measured on the bank: Monday and Tuesday are
+all T1/T2, and nine in ten of Thursday–Sunday need T4. Nothing past T4 ever
+appears; the what-if is the ladder's endgame, and a daily must be playable by
+anyone past level 10. A daily brings its own lessons: `open` asks what the board
+actually needs (`tierNeeded`) and shows any trick up to that the player hasn't
+seen (`techniqueFor`) — so a daily can teach "try each way" before level 20 does.
+
+**Baked, like the ladder** (`npm run daily:build`, ~2 min): an 8×8 costs the
+generator up to most of a second on a desktop, a visible freeze on a phone every
+morning. The bank is 52 whole weeks and cycles — whole weeks, so a wrap keeps
+every Monday a Monday — from `DAILY_EPOCH`, a Monday.
+
+**A day is the player's own calendar day** (`today()`), turning over at their
+midnight. A daily's board id is `DAILY_BASE + day`, which is how the rest of the
+game tells it from a level: it keeps its own record (`progress.daily`, not the
+ladder's stars), wears the accent on the header plate, and its win card's big
+button goes back to the road trip wherever the player left it. An unfinished
+daily is saved like any board and kept while it can still count — today's, or
+yesterday's started before midnight, which counts for the day it was dealt.
+
+The streak (`recordDaily`, `currentStreak`) counts days in a row: the next day's
+road extends it, a gap restarts it at one, the same day again changes only its
+stars, and it stays alive until a whole day has passed unbuilt — "yesterday" is
+still a streak, because today's may just not have been played yet.
 
 ## Commands
 
@@ -573,18 +792,36 @@ going); during connect it extends the route by one correct step.
 npm test              headless core tests — run this before trusting anything
 npm run typecheck     tsc --noEmit
 npm start             expo start
-npm run levels:build  regenerate the level bank (~30s, changes existing levels)
+npm run levels:build  regenerate the level bank (changes existing levels)
+npm run levels:build -- 121 136   rebuild only the bands starting there
+npm run daily:build   regenerate the daily bank (~2 min, changes the days to come)
 npm run sfx:build     re-synthesise every sound and the music loop
 npm run art:build     re-draw the icon, adaptive icon, splash and favicon
 npx expo export --platform android   bundle check
 ```
 
-`npm test` asserts, for every one of the 120 shipped boards: clues match the
+`npm test` asserts, for every one of the 150 shipped boards: clues match the
 path, **no clue is 0**, the path is a genuine self-avoiding walk, pieces face their neighbours,
 only the terminals leave the grid, the solver finds **exactly one** solution and
 it is the intended one, the bank round-trips through the codec, and the play rules
 accept the solution's own moves while refusing jumps, restarts and unclaimed
-squares. It also plays the tutorial's lessons by their script (see Onboarding).
+squares. A half-played copy of every board is saved and restored through JSON and
+must come back exactly — hearts included — while a save for another board, one
+claiming an empty square, or one with no hearts left is refused. Every one of the
+364 daily boards is held to the same structural and uniqueness checks, is its
+weekday's size, deduces within its weekday's cap, and the bank wraps without
+moving a weekday; the streak rules and the local-midnight turnover are pinned
+too. The garage's thresholds only climb, the first is free and the last is
+reachable but asks for mostly clean wins. Each technique
+course needs exactly its rule and arrives just before the first board that does
+(see "Techniques are taught when they're needed"). A player who
+does nothing but follow the hints must finish every board, and no hint may ever
+claim an empty square or rule out a road one; a crossed-out road square must be
+the first thing a hint fixes, and none may point at a green line's leftovers. The
+mountain bands carry exactly their twists and the classic ones none; scenery only
+ever stands off the road; fog is on one axis, two lines or more, and a fogged sign
+never turns green or red. It
+also plays the tutorial's lessons by their script (see Onboarding).
 
 And the assertions this ladder exists for:
 
@@ -598,4 +835,5 @@ And the assertions this ladder exists for:
   unsolvable at _n−1_, so a bug that quietly folded one tier's reasoning into
   another would show up as a flat ladder rather than passing silently.
 
-~61k checks, a couple of seconds.
+~129k checks, about six seconds — most of it proving each of the 364 daily
+boards has exactly one route.

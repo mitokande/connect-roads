@@ -31,6 +31,8 @@ import {
   bit,
   dirBetween,
   hasDir,
+  isFogged,
+  isScenery,
   key,
   otherDir,
   same,
@@ -104,14 +106,28 @@ export function colFound(puzzle: Puzzle, marks: Marks, c: number): number {
  * assumption gets caught before it has been built on for ten more moves.
  */
 export function lineOverCrossed(puzzle: Puzzle, marks: Marks, index: number, column: boolean) {
+  // Under fog there is no count to fall short of — and a warning would say what
+  // the count is, which is the one thing fog exists to keep.
+  if (isFogged(puzzle, column, index)) return false;
   const { size } = puzzle;
   let blocked = 0;
   for (let i = 0; i < size; i++) {
-    const m = column ? markAt(marks, size, i, index) : markAt(marks, size, index, i);
-    if (m === MARK_BLOCKED) blocked++;
+    const r = column ? i : index;
+    const c = column ? index : i;
+    if (markAt(marks, size, r, c) === MARK_BLOCKED || isScenery(puzzle, r, c)) blocked++;
   }
   const clue = column ? puzzle.cols[index] : puzzle.rows[index];
   return size - blocked < clue;
+}
+
+/**
+ * Does this line's sign turn green? When its road is all found — unless fog
+ * hides the count, in which case the sign has nothing it may say.
+ */
+export function lineSettled(puzzle: Puzzle, marks: Marks, index: number, column: boolean): boolean {
+  if (isFogged(puzzle, column, index)) return false;
+  const found = column ? colFound(puzzle, marks, index) : rowFound(puzzle, marks, index);
+  return found >= (column ? puzzle.cols[index] : puzzle.rows[index]);
 }
 
 /** Total road cells in the solution. */
@@ -197,8 +213,9 @@ export function connectStep(
  *
  * This is what lets both gestures live on the same grid at the same time: road
  * are paid out *from the end of the road*, so no cell ever has to guess which of
- * the two the finger meant. It also leaves un-claiming intact — tapping a
- * claimed cell that isn't on the road still takes the claim back.
+ * the two the finger meant. A claimed cell off the road stays on the deduction
+ * side, where a tap on it does nothing: a claim is permanent (see `TAP` in
+ * `useGame`).
  */
 export function grabsRoad(puzzle: Puzzle, route: Coord[], target: Coord): boolean {
   if (route.length === 0) return same(target, { r: puzzle.entry.r, c: puzzle.entry.c });
@@ -236,7 +253,9 @@ export function grabsRoad(puzzle: Puzzle, route: Coord[], target: Coord): boolea
 export function isUnknown(puzzle: Puzzle, marks: Marks, r: number, c: number): boolean {
   const { size } = puzzle;
   if (r < 0 || c < 0 || r >= size || c >= size) return false;
-  return markAt(marks, size, r, c) === MARK_NONE;
+  // Scenery is known — printed — so the road turns away from it for nothing, as
+  // it does from the player's own ✕.
+  return markAt(marks, size, r, c) === MARK_NONE && !isScenery(puzzle, r, c);
 }
 
 /** What the road's next step towards a dragged-at cell would be. */
@@ -314,20 +333,35 @@ export function paveStep(
 }
 
 /**
- * The part of a drawn route the marks still back up.
+ * The longest start of a route that is legal on these marks, found by drawing it
+ * again from nothing.
  *
- * Because road can be laid mid-deduction, a claim can be taken back underneath
- * one that is already drawn. The road is then cut at that cell and the rest
- * discarded — which is what the player would do by hand, and keeps the invariant
- * `connectStep` relies on: every cell of the route is claimed.
+ * This is for a route the rules didn't just watch being drawn — one coming back
+ * from storage. It is walked through `connectStep` from the entry, square by
+ * square, exactly as a finger would have laid it, and cut at the first step the
+ * rules refuse: an unclaimed square, a jump, a square used twice, a clash with a
+ * printed piece. What is left is road the player could have drawn on this board,
+ * which keeps the invariant `connectStep` relies on — every cell of the route is
+ * claimed — true of a restored board too.
  */
-export function trimRoute(puzzle: Puzzle, marks: Marks, route: Coord[]): Coord[] {
-  for (let i = 0; i < route.length; i++) {
-    const { r, c } = route[i];
-    if (markAt(marks, puzzle.size, r, c) !== MARK_ROAD) return route.slice(0, i);
+export function replayRoute(puzzle: Puzzle, marks: Marks, route: readonly Coord[]): Coord[] {
+  let out: Coord[] = [];
+  for (const cell of route) {
+    const next = connectStep(puzzle, marks, out, cell);
+    // A step back onto the previous square is a retreat to `connectStep`; in a
+    // stored route it can only mean the same square listed twice.
+    if (!next || next.length !== out.length + 1) break;
+    out = next;
   }
-  return route;
+  return out;
 }
+
+/**
+ * A square the board has already said everything about — a printed piece, or
+ * scenery — and so one the player's marks don't reach.
+ */
+export const isGiven = (puzzle: Puzzle, r: number, c: number): boolean =>
+  shownPiece(puzzle, r, c) !== null || isScenery(puzzle, r, c);
 
 /** The piece printed on the board from the start, if this cell has one. */
 export function shownPiece(puzzle: Puzzle, r: number, c: number): Piece | null {
@@ -386,23 +420,10 @@ export function routePieces(puzzle: Puzzle, route: Coord[]): Map<number, Piece> 
 }
 
 /**
- * The next cell the route should take, for the hint button: replays the true
- * solution up to wherever the player has drawn to, then hands back the step
- * after it. Returns null once the route is finished — or if it has wandered off
- * the solution, which `connectStep` should already have made impossible.
- */
-export function nextRouteCell(puzzle: Puzzle, route: Coord[]): Coord | null {
-  if (route.length === 0) return { r: puzzle.entry.r, c: puzzle.entry.c };
-  for (let i = 0; i < route.length; i++) {
-    if (!same(route[i], puzzle.path[i])) return null;
-  }
-  return route.length < puzzle.path.length ? puzzle.path[route.length] : null;
-}
-
-/**
- * A cell worth handing the player during deduction: an unclaimed road cell,
- * preferring one whose row or column is closest to being settled so the hint
- * lands where the reasoning was going anyway.
+ * A road square to hand the player without a reason — the hint as it used to be,
+ * kept as `hint.ts`'s safety net for a board the engine has nothing to say about.
+ * An unclaimed road cell, preferring one whose row or column is closest to being
+ * settled so it lands where the reasoning was going anyway.
  */
 export function hintCell(puzzle: Puzzle, marks: Marks): Coord | null {
   let best: Coord | null = null;

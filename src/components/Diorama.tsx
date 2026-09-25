@@ -16,7 +16,8 @@ import { dirBetween, hasDir, piece, type Coord, type Dir } from "../game/types";
 import { theme } from "../theme";
 import { Lawn } from "./Board";
 import { Car } from "./CarRide";
-import { TownArt } from "./Cell";
+import { TownArt } from "./Town";
+import type { Paint } from "../game/garage";
 import { RoadPiece } from "./RoadPiece";
 
 const COLS = 6;
@@ -66,7 +67,16 @@ function lapPoints(cells: Coord[], s: number) {
   return pts;
 }
 
-export function Diorama({ width, rows: ROWS = 3 }: { width: number; rows?: number }) {
+export function Diorama({
+  width,
+  rows: ROWS = 3,
+  paints = theme.fleet,
+}: {
+  width: number;
+  rows?: number;
+  /** The garage's paint job, so the front door shows the player's own convoy. */
+  paints?: readonly Paint[];
+}) {
   const frame = 10;
   const cell = Math.floor((width - frame * 2) / COLS);
   const cells = useMemo(() => loopCells(ROWS), [ROWS]);
@@ -132,7 +142,7 @@ export function Diorama({ width, rows: ROWS = 3 }: { width: number; rows?: numbe
         {Array.from({ length: CARS }, (_, i) => {
           const at = Animated.add(lap, i / CARS);
           const common = { inputRange: road.t, extrapolate: "clamp" as const };
-          const paint = theme.fleet[i % theme.fleet.length];
+          const paint = paints[i % paints.length];
           return (
             <Animated.View
               key={i}

@@ -13,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useRef } from "react";
 import { Animated, Easing, StyleSheet, useWindowDimensions, View } from "react-native";
 
+import { currentStreak, isDaily, today } from "../game/daily";
 import { LEVEL_COUNT } from "../game/levels";
 import { haptics } from "../haptics";
 import type { Game } from "../state/useGame";
@@ -37,8 +38,16 @@ export function WinTitle({ game }: { game: Game }) {
   }, [intro]);
 
   const perfect = game.hearts === MAX_HEARTS && game.hintsUsed === 0;
-  const last = game.level >= LEVEL_COUNT;
+  const daily = isDaily(game.level);
+  const last = !daily && game.level >= LEVEL_COUNT;
   const word = perfect ? "FLAWLESS!" : game.hearts === 1 ? "PHEW!" : "WELL DONE!";
+  // The streak is the daily's whole point, so its line under the title is that.
+  const streak = currentStreak(game.progress.daily, today());
+  // One line under the title: the news, if this win brought any, else what it was.
+  let sub: string;
+  if (game.newFleet) sub = `New paint job: ${game.newFleet.name}!`;
+  else if (daily) sub = streak > 1 ? `${streak} days in a row!` : "Today's road is built";
+  else sub = last ? "That's every road built — more soon!" : `Level ${game.level} complete`;
 
   return (
     // Absolute and centred on the banner's own box, so a title taller than the
@@ -63,7 +72,7 @@ export function WinTitle({ game }: { game: Game }) {
           { opacity: intro.interpolate({ inputRange: [0.6, 1], outputRange: [0, 1], extrapolate: "clamp" }) },
         ]}
       >
-        {last ? "That's every road built — more soon!" : `Level ${game.level} complete`}
+        {sub}
       </Animated.Text>
     </View>
   );
@@ -75,8 +84,20 @@ export function WinTitle({ game }: { game: Game }) {
  * ladder is the thing the player is climbing. Replay and the map sit either side:
  * available, not offered.
  */
-export function WinActions({ game, onExit }: { game: Game; onExit: () => void }) {
-  const last = game.level >= LEVEL_COUNT;
+export function WinActions({
+  game,
+  onExit,
+  onNext,
+}: {
+  game: Game;
+  onExit: () => void;
+  /** Open the next level — through the app, which may have a trick to show first. */
+  onNext: () => void;
+}) {
+  // After a daily, the next board is wherever the road trip was left.
+  const daily = isDaily(game.level);
+  const nextLevel = daily ? game.progress.unlockedLevel : game.level + 1;
+  const last = !daily && game.level >= LEVEL_COUNT;
   const rise = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.spring(rise, { toValue: 1, friction: 6, tension: 80, delay: 500, useNativeDriver: true }).start();
@@ -98,9 +119,9 @@ export function WinActions({ game, onExit }: { game: Game; onExit: () => void })
         <Button label="Road trip" size="lg" onPress={onExit} />
       ) : (
         <Button
-          label={`Level ${game.level + 1}`}
+          label={`Level ${nextLevel}`}
           size="lg"
-          onPress={game.next}
+          onPress={onNext}
           icon={<Ionicons name="car-sport" size={24} color={theme.onAccent} />}
         />
       )}

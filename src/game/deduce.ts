@@ -40,6 +40,7 @@ import {
   hasDir,
   key,
   type Coord,
+  shownClues,
   type Piece,
   type Puzzle,
   type Terminal,
@@ -57,12 +58,15 @@ export type Tier = 1 | 2 | 3 | 4 | 5;
 /** What the engine needs to know. Deliberately the shape `SolverInput` uses. */
 export type DeduceInput = {
   size: number;
+  /** Counts as shown: `-1` where fog hides one, and no rule reads that line's. */
   rows: number[];
   cols: number[];
   entry: Terminal;
   exit: Terminal;
   /** `key(r, c)` → the piece printed on that cell from the start. */
   fixed: Map<number, Piece>;
+  /** `key(r, c)` of squares printed as scenery: known to hold no road. */
+  blocked: Set<number>;
 };
 
 export type Grade = {
@@ -88,6 +92,37 @@ export type DeduceResult = {
   grade: Grade;
 };
 
+/** A row or a column. */
+export type Line = { column: boolean; index: number };
+
+/**
+ * One application of one rule — a single line counted, a single square's ways
+ * out — and what it settled. This is the unit a hint explains: the reason a
+ * player could give for these squares, in the words of the rule that found them.
+ */
+export type Step = {
+  tier: Tier;
+  /** Squares it proved hold road. */
+  road: Coord[];
+  /** Squares it proved hold none. */
+  empty: Coord[];
+  because:
+    /** T1: this line's count is met, or needs every square it has left. */
+    | { rule: "count"; line: Line }
+    /** T2: this road square has exactly as many ways out as it needs. */
+    | { rule: "exits"; cell: Coord }
+    /** T2: this square can't muster two ways out. */
+    | { rule: "deadEnd" }
+    /** T3: the road can't get here from the start. */
+    | { rule: "unreachable" }
+    /** T3: the road can't get to the flag without this square. */
+    | { rule: "bottleneck" }
+    /** T4: every placement of this line's count agrees here. */
+    | { rule: "overlap"; line: Line }
+    /** T5: assuming the opposite ends in a contradiction. */
+    | { rule: "refute" };
+};
+
 /**
  * Build engine input from a puzzle, optionally overriding which cells are
  * printed.
@@ -101,13 +136,17 @@ export function deduceInput(puzzle: Puzzle, fixed?: readonly Coord[]): DeduceInp
   const cells = fixed ?? puzzle.fixed;
   const map = new Map<number, Piece>();
   for (const { r, c } of cells) map.set(key(r, c), puzzle.solution[r][c]);
+  // Scenery and fog are the board, not reveals: they are there whichever
+  // reading is being taken, terminals-only included.
+  const { rows, cols } = shownClues(puzzle);
   return {
     size: puzzle.size,
-    rows: puzzle.rows,
-    cols: puzzle.cols,
+    rows,
+    cols,
     entry: puzzle.entry,
     exit: puzzle.exit,
     fixed: map,
+    blocked: new Set((puzzle.scenery ?? []).map(({ r, c }) => key(r, c))),
   };
 }
 
@@ -167,12 +206,25 @@ type Run = {
  * Split out from {@link deduce} so T5 can re-enter it on a copied state with a
  * lower cap — that recursion is the entire implementation of "assume and refute",
  * and capping the inner call at 4 is what keeps the depth at one.
+ *
+ * **Given `probe`, it reasons one round and changes nothing.** Every rule is then
+ * read against `state` exactly as it stands, each application that would settle
+ * something is written into `probe` as a {@link Step}, and the run stops after
+ * the cheapest tier that bites. That is what a hint needs: conclusions a player
+ * could reach from what is on the board *now*, each resting only on that — never
+ * on a square an earlier step in the same pass settled out of sight. (T5 is the
+ * exception in cost only: it stops at the first refutation, since trying every
+ * square twice to list them all is the slowest thing the engine can do.)
  */
-function propagate(input: DeduceInput, state: Int8Array, maxTier: Tier): Run {
+function propagate(input: DeduceInput, state: Int8Array, maxTier: Tier, probe?: Step[]): Run {
   const { size: n, rows, cols, entry, exit, fixed } = input;
   const perTier = [0, 0, 0, 0, 0, 0];
   let contradiction = false;
   let rounds = 0;
+  /** On once the printed pieces are seeded — they are given, not concluded. */
+  let probing = false;
+  /** What the rule application under way has settled, while probing. */
+  const settling: { r: number; c: number; v: number }[] = [];
 
   const idx = (r: number, c: number) => r * n + c;
   const at = (r: number, c: number) => state[idx(r, c)];
@@ -189,12 +241,31 @@ function propagate(input: DeduceInput, state: Int8Array, maxTier: Tier): Run {
   function set(r: number, c: number, v: number, tier: Tier): boolean {
     const i = idx(r, c);
     if (state[i] === UNKNOWN) {
-      state[i] = v;
-      perTier[tier]++;
+      if (probing) {
+        settling.push({ r, c, v });
+      } else {
+        state[i] = v;
+        perTier[tier]++;
+      }
       return true;
     }
     if (state[i] !== v) contradiction = true;
     return false;
+  }
+
+  /**
+   * Close one application of a rule: while probing, whatever it settled becomes
+   * a step, credited to the reason given. Free otherwise.
+   */
+  function note(tier: Tier, because: Step["because"]) {
+    if (!probe) return;
+    if (settling.length) {
+      const road: Coord[] = [];
+      const empty: Coord[] = [];
+      for (const { r, c, v } of settling) (v === ROAD ? road : empty).push({ r, c });
+      probe.push({ tier, road, empty, because });
+    }
+    settling.length = 0;
   }
 
   /** Connections this cell gets for free by leaving the board. */
@@ -257,6 +328,7 @@ function propagate(input: DeduceInput, state: Int8Array, maxTier: Tier): Run {
     for (let i = 0; i < n; i++) {
       for (const column of [false, true]) {
         const clue = column ? cols[i] : rows[i];
+        if (clue < 0) continue; // fogged: nothing to count against
         let road = 0;
         const unknown: Coord[] = [];
         for (let j = 0; j < n; j++) {
@@ -275,6 +347,7 @@ function propagate(input: DeduceInput, state: Int8Array, maxTier: Tier): Run {
         } else if (road + unknown.length === clue) {
           for (const { r, c } of unknown) moved = set(r, c, ROAD, 1) || moved;
         }
+        note(1, { rule: "count", line: { column, index: i } });
       }
     }
     return moved;
@@ -296,11 +369,13 @@ function propagate(input: DeduceInput, state: Int8Array, maxTier: Tier): Run {
           if (cands.length === need) {
             for (const p of cands) moved = set(p.r, p.c, ROAD, 2) || moved;
           }
+          note(2, { rule: "exits", cell: { r, c } });
         } else if (cell === UNKNOWN) {
           // Nothing that cannot muster two connections can hold road.
           if (offBoard(r, c) + portCount(r, c) < 2) {
             moved = set(r, c, NO_ROAD, 2) || moved;
           }
+          note(2, { rule: "deadEnd" });
         }
       }
     }
@@ -354,6 +429,7 @@ function propagate(input: DeduceInput, state: Int8Array, maxTier: Tier): Run {
         if (!seen[idx(r, c)]) moved = set(r, c, NO_ROAD, 3) || moved;
       }
     }
+    note(3, { rule: "unreachable" });
     if (moved) return true;
     // A square the road has no way around is a square the road goes through.
     for (let r = 0; r < n; r++) {
@@ -361,6 +437,7 @@ function propagate(input: DeduceInput, state: Int8Array, maxTier: Tier): Run {
         if (at(r, c) !== UNKNOWN) continue;
         const without = reachable({ r, c });
         if (!without[idx(exit.r, exit.c)]) moved = set(r, c, ROAD, 3) || moved;
+        note(3, { rule: "bottleneck" });
       }
     }
     return moved;
@@ -380,6 +457,7 @@ function propagate(input: DeduceInput, state: Int8Array, maxTier: Tier): Run {
     for (let i = 0; i < n; i++) {
       for (const column of [false, true]) {
         const clue = column ? cols[i] : rows[i];
+        if (clue < 0) continue; // fogged: no count to place
         const slots: Coord[] = [];
         let road = 0;
         for (let j = 0; j < n; j++) {
@@ -446,12 +524,14 @@ function propagate(input: DeduceInput, state: Int8Array, maxTier: Tier): Run {
           for (let s = 0; s < slots.length; s++) {
             const cell = slots[s];
             const p = perpOf(cell);
+            // A fogged crossing line has no count for a placement to break.
+            const pc = perpClue(cell);
             if (pick[s]) {
-              if (perpRoad[p] + 1 > perpClue(cell)) return false;
+              if (pc >= 0 && perpRoad[p] + 1 > pc) return false;
               if (offBoard(cell.r, cell.c) + portCount(cell.r, cell.c, emptyHere) < 2) {
                 return false;
               }
-            } else if (perpRoad[p] + perpUnknown[p] - 1 < perpClue(cell)) {
+            } else if (pc >= 0 && perpRoad[p] + perpUnknown[p] - 1 < pc) {
               return false;
             }
           }
@@ -492,6 +572,7 @@ function propagate(input: DeduceInput, state: Int8Array, maxTier: Tier): Run {
           if (alwaysRoad[s]) moved = set(r, c, ROAD, 4) || moved;
           else if (alwaysEmpty[s]) moved = set(r, c, NO_ROAD, 4) || moved;
         }
+        note(4, { rule: "overlap", line: { column, index: i } });
       }
     }
     return moved;
@@ -513,7 +594,9 @@ function propagate(input: DeduceInput, state: Int8Array, maxTier: Tier): Run {
           const res = propagate(input, trial, 4);
           if (res.contradiction) {
             const proven = guess === ROAD ? NO_ROAD : ROAD;
-            if (set(r, c, proven, 5)) return true;
+            const moved = set(r, c, proven, 5);
+            note(5, { rule: "refute" });
+            if (moved) return true;
           }
         }
       }
@@ -521,29 +604,30 @@ function propagate(input: DeduceInput, state: Int8Array, maxTier: Tier): Run {
     return false;
   }
 
-  // Seed: a printed piece is a square known to hold road.
+  // Seed: a printed piece is a square known to hold road, and scenery one known
+  // to hold none.
   for (const k of fixed.keys()) {
     const r = Math.floor(k / 100);
     const c = k % 100;
     set(r, c, ROAD, 1);
   }
+  for (const k of input.blocked) set(Math.floor(k / 100), k % 100, NO_ROAD, 1);
   perTier[1] = 0; // the seed is given, not deduced
+  probing = !!probe;
 
-  for (;;) {
+  const tiers = [t1, t2, t3, t4, t5];
+  search: for (;;) {
     rounds++;
-    if (contradiction) break;
     // Always fall back to the cheapest rule that still bites. That is both
     // faster and what makes `maxTier` an honest statement about the easiest
     // ladder that finishes the board.
-    if (maxTier >= 1 && t1()) continue;
-    if (contradiction) break;
-    if (maxTier >= 2 && t2()) continue;
-    if (contradiction) break;
-    if (maxTier >= 3 && t3()) continue;
-    if (contradiction) break;
-    if (maxTier >= 4 && t4()) continue;
-    if (contradiction) break;
-    if (maxTier >= 5 && t5()) continue;
+    for (let t = 1; t <= maxTier; t++) {
+      if (contradiction) break search;
+      if (tiers[t - 1]()) {
+        if (probing) break search;
+        continue search;
+      }
+    }
     break;
   }
 
@@ -586,4 +670,21 @@ export function deduce(input: DeduceInput, maxTier: Tier): DeduceResult {
     contradiction: run.contradiction,
     grade: { maxTier: hardest, topLoad, rounds: run.rounds, score },
   };
+}
+
+/**
+ * What a person could conclude next, from exactly what `known` holds — the
+ * engine's side of a hint.
+ *
+ * Every application of the cheapest rule that settles anything, each read
+ * against `known` as it stands (see `probe` on `propagate`), so a step never
+ * leans on a square only another step has settled. Empty when nothing more can
+ * be reasoned out, which on a correctly marked shipped board means it is done.
+ *
+ * `known` must hold every printed piece as `ROAD`, as a player's marks always do.
+ */
+export function nextSteps(input: DeduceInput, known: Int8Array, maxTier: Tier = 5): Step[] {
+  const steps: Step[] = [];
+  const run = propagate(input, known.slice(), maxTier, steps);
+  return run.contradiction ? [] : steps;
 }

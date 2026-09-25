@@ -23,6 +23,15 @@
 // `exhausted: false` means the node budget ran out before the search finished,
 // so the count is a floor rather than an answer — the generator throws such
 // candidates away rather than shipping a puzzle it can't vouch for.
+//
+// The mountain boards add two things, both cheap here. **Scenery** (`blocked`)
+// is a square the path may never enter, and it tightens the ceiling prune for
+// free, since a line's free cells start short by its scenery. **Fog** is a clue of
+// `-1`: unconstrained, so it never trips the floor or the ceiling. A fogged line
+// can no longer be counted on to be met by pigeonhole, so arrival now checks
+// every *visible* line explicitly — a check that can never fail when nothing is
+// fogged, which is what keeps every classic answer exactly what it was. The road's
+// length comes from whichever axis is fully visible; fog is only ever on one.
 
 import {
   bit,
@@ -45,6 +54,8 @@ export type SolverInput = {
   exit: Terminal;
   /** `key(r, c)` → the piece that cell is known to hold. */
   fixed: Map<number, Piece>;
+  /** `key(r, c)` of squares known to hold no road — a board's scenery. */
+  blocked?: Set<number>;
 };
 
 export type SolveResult = {
@@ -70,10 +81,16 @@ export function solve(
   limit = 2,
   budget = DEFAULT_BUDGET,
 ): SolveResult {
-  const { size: n, rows, cols, entry, exit, fixed } = input;
+  const { size: n, rows, cols, entry, exit, fixed, blocked } = input;
 
-  const total = rows.reduce((a, b) => a + b, 0);
-  if (total !== cols.reduce((a, b) => a + b, 0)) {
+  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+  const rowsShown = rows.every((v) => v >= 0);
+  const colsShown = cols.every((v) => v >= 0);
+  if (!rowsShown && !colsShown) {
+    throw new Error("fog on both axes: the road's length can't be known");
+  }
+  const total = rowsShown ? sum(rows) : sum(cols);
+  if (rowsShown && colsShown && total !== sum(cols)) {
     return { count: 0, solution: null, solutions: [], exhausted: true };
   }
   if (entry.r === exit.r && entry.c === exit.c) {
@@ -84,6 +101,10 @@ export function solve(
   const colLeft = cols.slice();
   const freeRow = new Array<number>(n).fill(n);
   const freeCol = new Array<number>(n).fill(n);
+  for (const k of blocked ?? []) {
+    freeRow[Math.floor(k / 100)]--;
+    freeCol[k % 100]--;
+  }
   const grid = new Int8Array(n * n); // piece per cell, 0 = not on the path
   const used = new Uint8Array(n * n);
 
@@ -103,6 +124,16 @@ export function solve(
       if (rowLeft[i] > freeRow[i]) return false;
       if (colLeft[i] > freeCol[i]) return false;
     }
+    return true;
+  }
+
+  /**
+   * Every line whose count is shown has been met exactly. Implied by the road's
+   * length when nothing is fogged; a fogged line is free to absorb the difference
+   * otherwise, so it has to be asked.
+   */
+  function visibleLinesMet(): boolean {
+    for (let i = 0; i < n; i++) if (rowLeft[i] > 0 || colLeft[i] > 0) return false;
     return true;
   }
 
@@ -133,6 +164,7 @@ export function solve(
 
     const idx = r * n + c;
     const k = key(r, c);
+    if (blocked?.has(k)) return; // scenery holds no road
     const fx = fixed.get(k);
     // Prune 4a: a revealed piece that doesn't open onto the edge we arrived by.
     if (fx !== undefined && !hasDir(fx, from)) return;
@@ -153,7 +185,12 @@ export function solve(
         // The exit cell is terminal: its only legal way out is off the grid.
         if (from !== exit.dir) {
           const p = bit(from) | bit(exit.dir);
-          if ((fx === undefined || fx === p) && remaining === 0 && usedFixed === fixed.size) {
+          if (
+            (fx === undefined || fx === p) &&
+            remaining === 0 &&
+            usedFixed === fixed.size &&
+            visibleLinesMet()
+          ) {
             grid[idx] = p;
             record();
             grid[idx] = 0;

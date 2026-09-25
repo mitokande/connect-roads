@@ -34,6 +34,7 @@
     "web": "expo start --web",
     "test": "tsx src/game/runTests.ts",
     "levels:build": "tsx scripts/buildLevels.ts",
+    "daily:build": "tsx scripts/buildDaily.ts",
     "typecheck": "tsc --noEmit",
     "sfx:build": "tsx scripts/buildSounds.ts",
     "art:build": "tsx scripts/buildArt.ts"

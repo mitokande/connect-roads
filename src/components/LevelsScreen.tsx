@@ -6,6 +6,12 @@
 // Stops show what they have to show and nothing more: a cleared level carries
 // its best star record, the current one pulses with a car parked on it, and the
 // rest are locked. The screen opens scrolled to wherever the car is.
+//
+// **The map keeps the towns the player built.** Every cleared stop puts a piece
+// of its region's town beside the road — a barn in the meadows, a tower in the
+// city — and a three-star clear puts up a second across the road from it. A
+// region starts as bare lawn and fills in as it is played, so the map shows how
+// far the player has come *and* how well, without a number on it.
 
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useRef } from "react";
@@ -21,58 +27,57 @@ import {
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
 
-import { LEVEL_COUNT, sizeForLevel } from "../game/levels";
+import { BANDS, bandFor, bandLevels, LEVEL_COUNT, type Band } from "../game/levels";
 import { haptics } from "../haptics";
 import { sound } from "../sound";
-import { font, radius, regionFor, shadow, theme } from "../theme";
+import { font, radius, REGIONS, shadow, theme } from "../theme";
 import { IconButton } from "./Button";
 import { Car } from "./CarRide";
 import { Scenery } from "./Scenery";
+import { TownArt, townHash, townKind } from "./Town";
+import type { Paint } from "../game/garage";
 
 const PER_ROW = 4;
 const ROW_H = 96;
 const NODE = 58;
 const XS = [0.14, 0.38, 0.62, 0.86];
+/** A piece of the map's town. */
+const TOWN = 30;
+/** Below the road, between two stops. */
+const TOWN_BESIDE = 40;
+/** Under a stop, beneath its stars. */
+const TOWN_UNDER = 59;
 
 export function LevelsScreen({
   unlockedLevel,
   stars,
+  paint,
   onPick,
   onBack,
 }: {
   unlockedLevel: number;
   stars: Record<number, number>;
+  /** The lead car of the player's convoy, parked at the current stop. */
+  paint?: Paint;
   onPick: (level: number) => void;
   onBack: () => void;
 }) {
   const { width } = useWindowDimensions();
   const mapW = Math.min(width - 36, 460);
   const scroll = useRef<ScrollView>(null);
-  const bandY = useRef<Record<number, number>>({});
-
-  const bands = useMemo(() => {
-    const out: { size: number; levels: number[] }[] = [];
-    for (let l = 1; l <= LEVEL_COUNT; l++) {
-      const size = sizeForLevel(l);
-      const last = out[out.length - 1];
-      if (last && last.size === size) last.levels.push(l);
-      else out.push({ size, levels: [l] });
-    }
-    return out;
-  }, []);
+  const bands = useMemo(() => BANDS.map((band) => ({ band, levels: bandLevels(band) })), []);
 
   const current = Math.min(unlockedLevel, LEVEL_COUNT);
-  const currentSize = sizeForLevel(current);
+  const currentBand = bandFor(current);
   const total = Object.values(stars).reduce((a, b) => a + b, 0);
 
   // Open on the region the car is in, with its row of stops in view.
   const scrolled = useRef(false);
-  const onBandLayout = (size: number, y: number) => {
-    bandY.current[size] = y;
-    if (scrolled.current || size !== currentSize) return;
+  const onBandLayout = (band: Band, y: number) => {
+    if (scrolled.current || band !== currentBand) return;
     scrolled.current = true;
-    const band = bands.find((b) => b.size === size)!;
-    const row = Math.floor(band.levels.indexOf(current) / PER_ROW);
+    const levels = bandLevels(band);
+    const row = Math.floor(levels.indexOf(current) / PER_ROW);
     const target = Math.max(0, y + 80 + row * ROW_H - 180);
     setTimeout(() => scroll.current?.scrollTo({ y: target, animated: false }), 0);
   };
@@ -97,14 +102,15 @@ export function LevelsScreen({
         style={{ alignSelf: "center" }}
         showsVerticalScrollIndicator={false}
       >
-        {bands.map((band) => (
-          <View key={band.size} onLayout={(e) => onBandLayout(band.size, e.nativeEvent.layout.y)}>
+        {bands.map(({ band, levels }) => (
+          <View key={band.first} onLayout={(e) => onBandLayout(band, e.nativeEvent.layout.y)}>
             <Region
-              size={band.size}
-              levels={band.levels}
+              band={band}
+              levels={levels}
               width={mapW}
               unlockedLevel={unlockedLevel}
               stars={stars}
+              paint={paint}
               onPick={onPick}
             />
           </View>
@@ -116,25 +122,29 @@ export function LevelsScreen({
 }
 
 function Region({
-  size,
+  band,
   levels,
   width,
   unlockedLevel,
   stars,
+  paint,
   onPick,
 }: {
-  size: number;
+  band: Band;
   levels: number[];
   width: number;
   unlockedLevel: number;
   stars: Record<number, number>;
+  paint?: Paint;
   onPick: (level: number) => void;
 }) {
-  const region = regionFor(size);
+  const region = REGIONS[band.region];
+  const { size } = band;
   const locked = levels[0] > unlockedLevel;
   const earned = levels.reduce((a, l) => a + (stars[l] ?? 0), 0);
   const rows = Math.ceil(levels.length / PER_ROW);
-  const height = rows * ROW_H + 14;
+  // Room under the last row for the town that grows beneath its stops.
+  const height = rows * ROW_H + 40;
 
   // Serpentine: left→right, then right→left, turning at the ends of each row.
   const pos = (i: number) => {
@@ -188,6 +198,34 @@ function Region({
           <Path d={d} stroke={theme.asphalt} strokeWidth={21} fill="none" strokeLinejoin="round" />
           <Path d={d} stroke={theme.roadLine} strokeWidth={2.5} strokeDasharray="9 8" fill="none" />
         </Svg>
+        {levels.flatMap((level, i) => {
+          if (level >= unlockedLevel) return [];
+          // Every spot is below the road it belongs to, so no two rows ever
+          // reach for the same patch of lawn between them. A stop builds beside
+          // the road on the way to the next one — or, where the road turns into
+          // the next row, under the stop itself, inside the bend. A three-star
+          // clear adds a second piece under the stop, beneath its stars.
+          const p = pos(i);
+          const q = i + 1 < levels.length ? pos(i + 1) : null;
+          const straight = q !== null && Math.abs(q.y - p.y) < 1;
+          const spots = straight
+            ? [{ x: (p.x + q.x) / 2, y: p.y + TOWN_BESIDE }]
+            : [{ x: p.x, y: p.y + TOWN_UNDER }];
+          if (straight && (stars[level] ?? 0) >= 3) spots.push({ x: p.x, y: p.y + TOWN_UNDER });
+          return spots.map((spot, k) => (
+            <View
+              key={`t${level}:${k}`}
+              pointerEvents="none"
+              style={{ position: "absolute", left: spot.x - TOWN / 2, top: spot.y - TOWN / 2 }}
+            >
+              <TownArt
+                size={TOWN}
+                kind={townKind(band.region, townHash(level, k, size * 31))}
+                h={townHash(k, level, size)}
+              />
+            </View>
+          ));
+        })}
         {levels.map((level, i) => {
           const p = pos(i);
           return (
@@ -201,6 +239,7 @@ function Region({
               locked={level > unlockedLevel}
               current={level === unlockedLevel}
               stars={stars[level] ?? 0}
+              paint={paint}
               onPick={onPick}
             />
           );
@@ -219,6 +258,7 @@ function Stop({
   locked,
   current,
   stars,
+  paint,
   onPick,
 }: {
   level: number;
@@ -229,6 +269,7 @@ function Stop({
   locked: boolean;
   current: boolean;
   stars: number;
+  paint?: Paint;
   onPick: (level: number) => void;
 }) {
   const pulse = useRef(new Animated.Value(0)).current;
@@ -295,7 +336,7 @@ function Stop({
       ) : null}
       {current ? (
         <View pointerEvents="none" style={styles.car}>
-          <Car length={30} width={19} />
+          <Car length={30} width={19} body={paint?.body} edge={paint?.edge} roof={paint?.roof} />
         </View>
       ) : null}
     </View>

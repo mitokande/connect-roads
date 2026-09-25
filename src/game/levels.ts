@@ -8,16 +8,61 @@ import { generatePuzzle } from "./generator";
 import { LEVEL_BANK } from "./levelData";
 import type { Puzzle } from "./types";
 
-export const LEVEL_COUNT = 120;
+export const LEVEL_COUNT = 150;
 
-/** [first level of the band, grid size]. */
-const BANDS: [number, number][] = [
-  [1, 4],
-  [11, 5],
-  [26, 6],
-  [46, 7],
-  [76, 8],
+/** The regions of the road trip, in the order it drives through them. */
+export type RegionId = "meadow" | "village" | "market" | "riverside" | "metropolis" | "pass" | "summit";
+
+/**
+ * A stretch of the ladder: where it starts, the board size, the region it is
+ * drawn as — and, for the mountains, the twists every board in it carries.
+ *
+ * The first five grow the board; the last two keep it at 8×8 and change the
+ * *game* instead, because a ninth size would shrink the cells past what a thumb
+ * can hit. **Mountain Pass** prints scenery — rocks, pines, lakes the road has to
+ * find its way round — and **Cloud Summit** adds fog over some of the counts.
+ * Scenery gives facts away and fog takes some back, so the two together are a
+ * new texture of puzzle rather than just a harder one; see `generator.ts`.
+ */
+export type Band = {
+  first: number;
+  size: number;
+  region: RegionId;
+  /** Squares of scenery on every board. */
+  scenery?: number;
+  /** Lines under fog on every board (0, or at least 2). */
+  fog?: number;
+};
+
+export const BANDS: Band[] = [
+  { first: 1, size: 4, region: "meadow" },
+  { first: 11, size: 5, region: "village" },
+  { first: 26, size: 6, region: "market" },
+  { first: 46, size: 7, region: "riverside" },
+  { first: 76, size: 8, region: "metropolis" },
+  { first: 121, size: 8, region: "pass", scenery: 5 },
+  { first: 136, size: 8, region: "summit", scenery: 4, fog: 2 },
 ];
+
+/** The band a level belongs to. */
+export function bandFor(level: number): Band {
+  let band = BANDS[0];
+  for (const b of BANDS) if (level >= b.first) band = b;
+  return band;
+}
+
+/** Every level in a band, in order. */
+export function bandLevels(band: Band): number[] {
+  const i = BANDS.indexOf(band);
+  const end = i + 1 < BANDS.length ? BANDS[i + 1].first - 1 : LEVEL_COUNT;
+  const out: number[] = [];
+  for (let l = band.first; l <= end; l++) out.push(l);
+  return out;
+}
+
+/** The classic region for a board size — for boards that aren't on the ladder. */
+export const regionForSize = (size: number): RegionId =>
+  size <= 4 ? "meadow" : size === 5 ? "village" : size === 6 ? "market" : size === 7 ? "riverside" : "metropolis";
 
 /** Levels at the start of a new size that get one extra piece revealed. */
 export const GRACE_LEVELS = 3;
@@ -35,20 +80,17 @@ export const HARD_TIER_FROM = 96;
  * that as proof of the opposite. That is still sound reasoning rather than a
  * gamble, which is what keeps it compatible with a checked claim and three hearts.
  */
-export const tierCapForLevel = (level: number): Tier => (level >= HARD_TIER_FROM ? 5 : 4);
+export const tierCapForLevel = (level: number): Tier => {
+  const band = bandFor(level);
+  // The mountains' difficulty is their twists; they never also ask for a what-if.
+  if (band.scenery || band.fog) return 4;
+  return level >= HARD_TIER_FROM ? 5 : 4;
+};
 
-export function sizeForLevel(level: number): number {
-  let size = BANDS[0][1];
-  for (const [start, s] of BANDS) if (level >= start) size = s;
-  return size;
-}
+export const sizeForLevel = (level: number): number => bandFor(level).size;
 
-/** How far into its size band a level sits (0 = the first board at that size). */
-export function bandIndex(level: number): number {
-  let start = 1;
-  for (const [s] of BANDS) if (level >= s) start = s;
-  return level - start;
-}
+/** How far into its band a level sits (0 = the band's first board). */
+export const bandIndex = (level: number): number => level - bandFor(level).first;
 
 /**
  * Seed for a level. The multiply-and-mix keeps neighbouring levels from drawing
@@ -90,6 +132,8 @@ export function puzzleForLevel(level: number): Puzzle {
         bonusReveals: bandIndex(level) < GRACE_LEVELS ? 1 : 0,
         maxTier: 4,
         attempts: 400,
+        scenery: bandFor(level).scenery,
+        fog: bandFor(level).fog,
       });
   cache.set(level, puzzle);
   return puzzle;

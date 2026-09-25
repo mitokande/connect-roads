@@ -104,7 +104,36 @@ export type Puzzle = {
    */
   fixed: Coord[];
   seed: number;
+  /**
+   * Squares printed as scenery — a rock, a stand of pines, a mountain lake — so
+   * known from the start to hold no road. Absent on the classic boards. See
+   * `generator.ts` for why a board would give these away.
+   */
+  scenery?: Coord[];
+  /**
+   * Lines whose count is hidden under fog (a `?` sign), all on one axis — the
+   * other axis still sums to the road's length, so the player always knows how
+   * much road there is, and never more than two fogged lines' combined count.
+   */
+  fog?: Fog;
 };
+
+/** Some rows, or some columns — never a mix (see `Puzzle.fog`). */
+export type Fog = { axis: "row" | "col"; index: number[] };
+
+/** The row and column counts as the player sees them: `-1` where fog hides one. */
+export function shownClues(p: Puzzle): { rows: number[]; cols: number[] } {
+  const rows = p.rows.slice();
+  const cols = p.cols.slice();
+  if (p.fog) for (const i of p.fog.index) (p.fog.axis === "row" ? rows : cols)[i] = -1;
+  return { rows, cols };
+}
+
+export const isFogged = (p: Puzzle, column: boolean, index: number): boolean =>
+  !!p.fog && p.fog.axis === (column ? "col" : "row") && p.fog.index.includes(index);
+
+export const isScenery = (p: Puzzle, r: number, c: number): boolean =>
+  !!p.scenery && p.scenery.some((s) => s.r === r && s.c === c);
 
 /** What the player has asserted about a cell during the deduction phase. */
 export type Mark = "none" | "road" | "blocked";

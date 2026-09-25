@@ -214,7 +214,7 @@ export const sound = {
   pop: () => fire("pop"),
   /** A square ruled out. */
   cross: () => fire("cross"),
-  /** A mark taken back — a cross rubbed out, or a claim un-claimed. */
+  /** A mark taken back — a cross rubbed out, or a board started again. */
   uncross: () => fire("uncross"),
   /** A claim accepted, however it was made. */
   claim: () => fire("claim"),
