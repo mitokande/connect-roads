@@ -65,22 +65,61 @@ export const withMark = (marks: Marks, size: number, r: number, c: number, m: nu
 };
 
 /**
- * Every square still unmarked, crossed out — the board's one and only ✕ of its
- * own, and it waits until the road is finished.
+ * Every square still unmarked, crossed out — what the board writes as the win
+ * lands.
  *
- * Nothing crosses out for the player while there is anything left to work out:
- * sweeping a settled line is the game's central deduction, and filling it in the
- * moment the clue allows would do that deduction for them. A complete route ends
- * the reasoning outright — every road square is claimed, so every square without
- * a mark is empty and the player has already proved it. Writing it down is
- * bookkeeping on a board nobody is thinking about any more, and it leaves the
- * finished grid stating the whole answer rather than trailing the squares that
- * were never worth the tap.
+ * A complete route ends the reasoning outright — every road square is claimed, so
+ * every square without a mark is empty and the player has already proved it.
+ * Writing it down leaves the finished grid stating the whole answer rather than
+ * trailing the squares that were never worth the tap. (By then `sweepSettled` has
+ * usually done it already: with every road square claimed, every line is full.)
  */
 export function crossOutRest(marks: Marks): Marks {
   const next = marks.slice();
   for (let i = 0; i < next.length; i++) if (next[i] === MARK_NONE) next[i] = MARK_BLOCKED;
   return next;
+}
+
+/**
+ * Every full line with the rest of its squares crossed out: a row or column
+ * holding as many claims as its count has no road left in it, so whatever in it
+ * is still unmarked is empty, and the board writes that in.
+ *
+ * It can never write a wrong ✕. A claim is checked when it goes down, so the
+ * claims a full line holds are its road, all of it. And it knows nothing the
+ * player can't see: the claims are theirs and the count is printed, which is why
+ * these crosses may turn the road away for free (`isUnknown`) — a refusal there
+ * tells the player only what the ✕ already says.
+ *
+ * Only a mark nobody has made is written: a ✕ is never doubled and a claim never
+ * touched. A fogged line is left alone, since sweeping it would say what its
+ * hidden count is; so is scenery, which no mark lands on.
+ */
+export function sweepSettled(puzzle: Puzzle, marks: Marks): Marks {
+  const n = puzzle.size;
+  let next: Marks | null = null;
+  for (const column of [false, true]) {
+    for (let i = 0; i < n; i++) {
+      if (!lineSettled(puzzle, marks, i, column)) continue;
+      for (let j = 0; j < n; j++) {
+        const r = column ? j : i;
+        const c = column ? i : j;
+        if (markAt(marks, n, r, c) !== MARK_NONE || isGiven(puzzle, r, c)) continue;
+        next ??= marks.slice();
+        next[r * n + c] = MARK_BLOCKED;
+      }
+    }
+  }
+  return next ?? marks;
+}
+
+/**
+ * A board as it opens: the printed pieces claimed, and any line they already
+ * fill swept (`sweepSettled`). Anything on a board beyond this is the player's
+ * doing — which is what "is there anything here to lose" has to compare against.
+ */
+export function openingMarks(puzzle: Puzzle): Marks {
+  return sweepSettled(puzzle, initialMarks(puzzle));
 }
 
 export const isRoadCell = (puzzle: Puzzle, r: number, c: number): boolean =>
@@ -140,9 +179,10 @@ export function foundTotal(marks: Marks): number {
 }
 
 /**
- * Squares the player has crossed out. Every ✕ on the board is now one of these —
- * a tally of what the *player* did, which is what makes it usable as "a mark just
- * went down" or "a mark just came back up".
+ * Squares crossed out — by the player, or by the board sweeping a full line
+ * (`sweepSettled`). The sound layer listens to it for "a mark just went down" or
+ * "came back up"; a sweep always rides in on a claim, and the claim's sound
+ * outranks it.
  */
 export function blockedTotal(marks: Marks): number {
   let n = 0;
@@ -227,13 +267,15 @@ export function grabsRoad(puzzle: Puzzle, route: Coord[], target: Coord): boolea
  * be pushed into, and a push into one is a claim — checked, and a heart if it is
  * wrong.
  *
- * Only the player's own ✕ turns the road away, and it does so for free: that
- * mark is their note, and respecting it costs nothing because it tells them
- * nothing they didn't write themselves.
+ * Only a ✕ on the board turns the road away, and it does so for free: the
+ * player's own is their note, and a full line's is written from their checked
+ * claims and a printed count (`sweepSettled`). Respecting either costs nothing,
+ * because it tells them nothing the board isn't already showing.
  *
- * **The clues do not get a say here**, and that is deliberate. Squares in a row
- * or column whose count is already accounted for used to be exempt too — the
- * road simply declined to enter them. It reads as mercy and works as neither:
+ * **The clues do not get a say here**, and that is deliberate — this reads the
+ * marks and nothing else. Squares in a row or column whose count is accounted for
+ * are turned away now only because the board has *drawn* a ✕ in them. They used
+ * to be exempt with no ✕ there, and that read as mercy and worked as neither:
  *
  *  - It is *inconsistent*. Double-tapping such a square costs a heart (`CLAIM`
  *    asks only `isRoadCell`). The same false belief, priced two ways depending

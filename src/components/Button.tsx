@@ -86,7 +86,8 @@ export function IconButton({
   children: React.ReactNode;
   onPress: () => void;
   size?: number;
-  badge?: number;
+  /** A count in the corner — or a small glyph, when the count has run out and something else is on offer. */
+  badge?: number | React.ReactElement;
   disabled?: boolean;
   tone?: Tone;
   style?: StyleProp<ViewStyle>;
@@ -136,7 +137,7 @@ export function IconButton({
       </View>
       {badge !== undefined ? (
         <View style={[styles.badge, { top: down ? depth - 4 : -4 }]}>
-          <Text style={styles.badgeText}>{badge}</Text>
+          {typeof badge === "number" ? <Text style={styles.badgeText}>{badge}</Text> : badge}
         </View>
       ) : null}
     </Pressable>

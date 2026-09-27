@@ -55,8 +55,8 @@ export function HelpOverlay({
           </Rule>
           <Rule art={<ClueArt />} title="The numbers are counts">
             Each number says how many squares in that row or column hold road — not which ones. It
-            turns green once you've found them all, and into a red warning sign if you've ruled out
-            too many.
+            turns green once you've found them all, and the rest of that line is crossed out for
+            you. It turns into a red warning sign if you've ruled out too many.
           </Rule>
           <Rule
             art={

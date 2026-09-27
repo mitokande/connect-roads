@@ -19,15 +19,16 @@
 //     that reasoned past it would reason from that fact too, so the first hint on
 //     such a board points at the wrong ✕ and claims the square instead.
 //  2. **A green line counts as swept.** A settled line's leftovers are empty, and
-//     the board already says so in green. Plenty of players never bother crossing
-//     them out, and they shouldn't spend a hint to be told what the sign says.
+//     the board crosses them out itself (`sweepSettled`), so nobody should spend
+//     a hint to be told what the grid already shows.
 //
 // What a hint does with its answer follows the board's own rules of authorship.
 // Road is **claimed**: a hint that lays nothing would feel like it did nothing,
 // and a claim is exactly what a hint has always been allowed to make. Empty
-// squares are **pointed at, never crossed**: every ✕ on the board is the
-// player's own (see "Every cross is the player's"), a hint is no exception, and
-// crossing is free anyway. The tip stays up until they have.
+// squares are **pointed at, never crossed**: the only ✕ the board writes are a
+// full line's, which need no reasoning; an empty square a hint has *reasoned*
+// out is the player's to write, and crossing is free anyway. The tip stays up
+// until they have.
 
 import {
   hintCell,

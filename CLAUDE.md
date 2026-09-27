@@ -26,8 +26,8 @@ masks) fall out of the same representation for free.
 **Deduce.** Work out *which* squares carry road. Double tap claims a square
 ("road goes here"); a single tap or a swipe crosses one out. You never say what
 *shape* the piece is — that isn't knowable yet, and the board draws a claimed
-square as a pegged-out plot of earth, road ends poking in from all four edges,
-with a road-works sign carrying a `?` in the middle.
+square as road works — fresh tarmac, taped off in yellow and black, reaching out
+to its neighbours: road passes through here, its shape still to come.
 
 **Connect.** The route's shape is still unknown, and the player drags from the
 entry terminal through the claimed squares to lay the actual road. The finished
@@ -52,16 +52,17 @@ four squares and then tracing them. It costs exactly what a double tap costs —
 `refuse` is shared — and it has to, because a push that were merely *refused*
 would be a free oracle for "is there road here", and the deduction is the game.
 
-**Only the player's own ✕ turns the road away for free** (`isUnknown`) — their
-note, respected, and it tells them nothing they didn't write themselves. The
-clues get no say: a square in a line whose count is already accounted for is
-provably empty, and the road still pushes into it and still charges, because
-noticing that is exactly the counting the player is there to do. The board used
-to exempt those squares, which was three things at once — inconsistent with the
-double tap, which charges for the same false belief; silent, since no ✕ is drawn
-there to explain the refusal, so a miscount got corrected without being
-reported; and a hole in the oracle rule, because an exemption the player can't
-see is itself a free probe (refused means empty, at no cost).
+**Only a ✕ turns the road away for free** (`isUnknown`) — the player's own,
+their note respected, or a full line's, which the board writes (see "A full line
+crosses itself out"). Neither tells them anything the grid isn't already showing.
+The clues themselves get no say: `isUnknown` reads the marks and nothing else.
+The board once exempted squares in a line whose count was accounted for *with no
+✕ drawn there*, which was three things at once — inconsistent with the double
+tap, which charges for the same false belief; silent, since nothing on the grid
+explained the refusal, so a miscount got corrected without being reported; and a
+hole in the oracle rule, because an exemption the player can't see is itself a
+free probe (refused means empty, at no cost). A full line's ✕ answers the last
+two by being drawn.
 
 **A push stops being a claim once the deduction is done.** With every road
 square claimed there is nothing left to bet on — an unmarked square is empty by
@@ -105,9 +106,8 @@ Double-tapping a square with no road is **refused and costs a heart** — the
 square is crossed out instead (it *is* now known to be empty, and charging a
 heart for nothing would be worse than the mistake; it also can't be re-claimed
 for a second heart). Crossing out is **free and never checked**: it is
-note-taking. Sweeping a settled row is the game's most common deduction and the
-first thing the tutorial teaches — charging for it would make the core move feel
-like a gamble.
+note-taking, and charging for it would make the core move feel like a gamble.
+The commonest cross of all — the rest of a full line — the board writes itself.
 
 The consequence worth protecting: because claims are verified, **a ✓ on the
 board is always true**, so the road can trust the claimed set completely and
@@ -182,12 +182,13 @@ what follows, and from what (`src/game/hint.ts`).
 - **Mistakes first.** A ✕ on a road square is the one mistake the board lets
   stand, and every step built on it is built on a false fact, so the first hint
   on such a board points at it and claims the square instead.
-- **A green line counts as swept.** Its leftovers are empty and the sign already
-  says so; nobody should pay a hint to be told that.
+- **A green line counts as swept.** Its leftovers are empty and the board has
+  already crossed them out; nobody should pay a hint to be told that.
 - **Road is claimed, empties are pointed at.** A hint may claim, as it always
-  could. It may not cross anything out — every ✕ is the player's — so it rings
-  the empty squares and the tip stays up until the player has crossed them
-  (`followTip`); anything else they do takes it down.
+  could. It may not cross anything out — the only ✕ the board writes are a full
+  line's, and an empty square a hint has *reasoned* out is the player's to write
+  — so it rings the empty squares and the tip stays up until the player has
+  crossed them (`followTip`); anything else they do takes it down.
 - **Of equally easy steps, the nearest the road's end wins**, so the hint lands
   where the reasoning was going.
 - **While connecting**, a hint lays the next square of road — and first winds a
@@ -200,29 +201,47 @@ white: half the squares a hint rings are empty, and "a hint is about this square
 must never read as "the road goes here". The banner's box is tall enough for its
 usual two lines, so a one-line hint coming and going never jogs the board.
 
-### Every cross is the player's
+### A full line crosses itself out
 
-The board draws no ✕ of its own. It used to: a settled row or column had its
-leftovers crossed out in a paler grey, derived rather than stored so they
-couldn't drift. Two things were wrong with it. Sweeping a settled line is the
-game's central deduction, and filling it in the instant the last ✓ landed did
-that deduction for the player — the grid walked itself to "obviously finished"
-without them ever reading the clue. And it made the glyph ambiguous: a player
-scanning the grid had to sort their own marks from the board's before trusting
-any of them, which is a tax on the one thing they most need to trust.
+When a row or column holds as many claims as its count, the rest of its squares
+are crossed out on the spot (`sweepSettled` in `board.ts`). The reducer's
+`settle` runs it on every change, so no route to a claim — double tap, push,
+hint — can miss it, and `boardFor` runs it as a board opens, so a line a terminal
+already fills opens swept.
 
-So there is one ✕, in one weight (`mark`), and it means "the player says this is
-empty". Nothing else on the grid crosses anything out, and no rule consults a
-settled line on the player's behalf either — the exemption that used to survive
-in `isUnknown` went with the marks, for the reasons above.
+This reverses an earlier rule, twice over. The board first drew such leftovers
+as paler, derived crosses, then drew none at all, on the grounds that sweeping a
+full line is the game's central counting move and a grid that does it has done
+the deduction for the player. What changed the answer is that the chore outweighed
+the lesson: *noticing* a line is full is the deduction, and the green sign already
+rewards it; tapping out its leftovers one by one afterwards is bookkeeping, and on
+an 8×8 it is most of the taps in a board. What made the old versions wrong is
+designed out rather than accepted:
 
-The one exception is the last frame of a won board: finishing the route means
-every road square is claimed, so the squares still unmarked are empty *and the
-player has already proved it*. `crossOutRest` writes them in as the win is
-committed (and the board then draws every off-route square as a bit of town — see
-Rendering) — no deduction is being done for anyone at that point, and the finished
-grid states the whole answer instead of trailing the squares that were never
-worth the tap.
+- **One ✕, one weight.** A sweep writes an ordinary `MARK_BLOCKED`, drawn in the
+  same `mark` as the player's, so there is no second glyph to learn or sort. It
+  needs no sorting anyway: a sweep can only be true — the claims are checked and
+  the count is printed — and it always sits under a green sign.
+- **Drawn, so no oracle.** Those squares turn the road away for free only because
+  a ✕ is drawn there, derived from what the player can see.
+- **It can't be rubbed out.** A tap takes a full line's ✕ off and the sweep puts it
+  straight back, like a tap on a ✓: a mark that can only be true has nothing to
+  gain from coming off.
+- **Fog and scenery are left alone.** A fogged line is never swept — that would
+  give its hidden count away — and no mark lands on scenery.
+
+The knock-ons: the tutorial's third lesson now *shows* the sweep rather than
+asking for it (a claim fills a column and the square under it crosses itself
+out), so the first ✕ a player is asked to write by hand is the dead end in the
+two-ways-out course, the first place a hand-written ✕ is actually needed; and
+`worthKeeping` compares a board against `openingMarks`, so one whose terminal
+fills a line isn't mistaken for one with work on it.
+
+The last frame of a won board still gets `crossOutRest`: finishing the route
+means every road square is claimed, so every square still unmarked is empty *and
+the player has already proved it* — usually the sweep has written them all by
+then anyway. The board then draws every off-route square as a bit of town (see
+Rendering), and the finished grid states the whole answer.
 
 `lineOverCrossed` turns a clue into a red **warning sign** when the player has
 ruled out so much of a line that its count can no longer be met. Nothing is
@@ -263,6 +282,7 @@ src/components/             Board, Cell, RoadPiece, CarRide, screens, overlays
   GuideHand.tsx             the animated finger that demonstrates each gesture
   Logo.tsx / Display.tsx    the wordmark, and outlined display type
 src/haptics.ts              vibration, one switch
+src/ads.ts                  rewarded video (revive, hint); skipped with the reward paid in Expo Go and on the web
 src/sound.ts                sound effects and the music loop, one switch each
 src/theme.ts                palette, fonts, regions; colour is assigned by function
 assets/sfx/                 GENERATED — the baked sounds and music
@@ -417,11 +437,51 @@ Shrubs are planted only above `BUSH_MIN_PX`. On an 8×8 the cells are small
 enough that shrubbery turns into smudges, and the road is the thing the player is
 trying to read.
 
-A claimed square is a dirt plot inset from the cell with short road ends reaching
-from each edge to the plot, so two claims side by side already look as if they
-could join; a ✕ is chalk-white with a shadow so it stands off the lawn. The square
-where the next road goes is tinted and ringed by `HeadRing`, which breathes — the
-only thing on an untouched board that moves, so the eye goes there first. Clues
+A claimed square is **road works**: a square of fresh tarmac inset from the cell,
+taped off in yellow and black, with a neck of the same works reaching out of each
+side it could be joined from (`ClaimGlyph` in `Cell.tsx`); a ✕ is chalk-white with
+a shadow so it stands off the lawn. It is the road's own build-up with the finish
+still to come — tarmac on the road's dark hairline, but no kerb stones yet, only
+the tape where they will go, and none of the road's paint: the white edge lines
+and the yellow dashes are what say which way a road goes, and that is the one
+thing a claim doesn't know. The tarmac is a shade paler than the finished road's
+(`asphaltFresh`), with its stones still showing. So laying the real piece reads as
+the works being finished — the tape comes down, the kerbs go in, the lines are
+painted — and the finished road stays the darkest, cleanest thing on the board.
+Yellow and black appear nowhere else in the palette, so the tape can't be taken
+for a hint (orange), a mistake (red) or a settled clue (green). The stripes repeat
+a whole number of times across a cell (`TAPE_STRIPES`), so where two claims' necks
+meet the tape runs on unbroken.
+
+**The necks say it will connect.** A claim is a square the road passes
+*through*, and a bare tile said nothing about that — a row of them read as a row
+of tiles. A neck runs to the cell's edge, so two claims side by side meet neck to
+neck and a printed piece turned their way plugs straight in. They are narrower
+than the road (`NECK_W`): at full width four of them are a crossroads, and a
+board of claims fuses into one car park. And a neck is only drawn where the road
+could really go (`claimWays` in `Board.tsx`): not out through the frame, not onto
+scenery, not into a square a full line has crossed out, not into the side of a
+whole piece of road that turns away — each of those would draw a road that can't
+exist. Any other ✕ is **not** consulted: outside a full line a ✕ is the player's
+unchecked note, and necks that withdrew from those would draw "two ways out" for
+the player the moment the second-last neighbour was crossed.
+
+What it replaced, and why: a road-works sign carrying a `?` on a plot of earth,
+with four stubs of road poking in from every edge regardless. A claim is the one
+checked mark on the board, so a question mark on it reads as doubt about the one
+thing that isn't in doubt; and a plot of earth, tried without the sign, read as a
+building site rather than as road. Also tried and dropped: a traffic cone on the
+square (it drew the eye away from the road, and a cone is what *closes* a road), a
+tarmac disc with the yellow dashes wound into a ring (a manhole cover at 8×8),
+plain grey gravel (the mountains' rocks are grey, and those are printed
+*empties*), a stub of the centreline's paint on each side (a crossroads), a plain
+kerb with no tape (tidy, but it read as finished road, not works), red-and-white
+barrier tape (red is the hearts' and the mistakes'), and a dug-earth edge (too
+quiet to read as works at 8×8).
+
+The square where the next road goes is tinted and ringed by `HeadRing`, which
+breathes — the only thing on an untouched board that moves, so the eye goes there
+first. Clues
 are round signs above and beside the tray: paper, green when settled — and a
 red-rimmed warning triangle when over-crossed, sized to take back exactly the
 gutter the disc leaves spare, so nothing shifts when a clue flips.
@@ -571,11 +631,12 @@ responder is created once and would otherwise capture the first render's props.
 **Shown, not told.** A first-time player who presses Play (`tutorialSeen` false,
 still on level 1) gets `TutorialScreen` before any real board: four 3×3 lessons,
 **one short line** at a time, and a finger (`GuideHand`) that performs the exact
-gesture on the exact square it wants — double tap, tap, swipe, drag, or pointing
-at a clue — looping until the player copies it. It steps out of the way while the
+gesture on the exact square it wants — double tap, drag, or pointing at a clue
+(and, in the technique courses, tap and pointing at a square) — looping until the
+player copies it. It steps out of the way while the
 player moves and comes back when they pause. The order is the order the ideas are
 needed: the goal (drag start → flag, and the car ride as the payoff), what a number
-counts plus double tap, ruling out a full line (swipe, tap) and the forced claim it
+counts plus double tap, a full line crossing itself out and the forced claim it
 leaves, a your-turn square, and road that claims as it's pushed. A four-row recap
 card ends it; Settings and Help both replay it.
 
@@ -667,6 +728,14 @@ into the unknown claims a square *and* extends the road — so the rules are ran
 and one wins. `fail` outranks `wrong` because losing the last heart bumps the
 shake too, and the refusal is no longer the news.
 
+**A sound has to keep up with its buzz.** The haptics fire on the touch itself,
+so any delay in the sound is heard *against* them. Two delays used to add up on
+a claim: the hook ran as a plain effect, after the paint, behind the redraw of a
+claim's neighbours (and sometimes a whole swept line); and the clip's first note
+came 20ms in and its loud one at 95ms, over a thump a phone speaker can't
+play. The hook is a layout effect now, both notes land in the first 50ms, and a
+sound's audible part starts at its first sample.
+
 Two things that only bite off the web build, both worth keeping:
 
 - **A finished player is parked at the end of its clip.** Only the web's
@@ -680,6 +749,18 @@ Two things that only bite off the web build, both worth keeping:
   manifest and `NSMicrophoneUsageDescription` in Info.plist — for a game that
   only plays 400ms blips. `app.json` passes `microphonePermission: false` and
   `recordAudioAndroid: false` to turn both off.
+- **…and for background playback.** `enableBackgroundPlayback` defaults to on,
+  which writes `UIBackgroundModes: audio` into Info.plist — for an app that plays
+  nothing once it is left, which App Review rejects (2.5.4) — and a
+  `mediaPlayback` foreground service into the Android manifest, which Play makes
+  you justify. `app.json` passes `enableBackgroundPlayback: false`. The plugin
+  only ever *adds*, so a local `ios/`/`android/` made before that keeps both until
+  `npx expo prebuild --clean`.
+
+The session obeys the ring switch (`playsInSilentMode: false`, which on iOS is
+the `ambient` category: it also mixes with the player's own music rather than
+ducking it). A game that clicks through a phone set to silent is one that gets
+deleted.
 
 ## The ladder
 
@@ -714,6 +795,46 @@ the board").
 
 Hints spend from persisted stock (see "Hints say why" for what one does).
 
+## Rewarded video
+
+Two things are sold for a short ad, both opt-in and both said on the button:
+**a heart back on a lost board** (`FailOverlay`) and **a hint once the stock is
+empty** (the bulb's badge turns to ▶ and it asks first, `HintOffer`). Nothing
+else in the game shows an ad.
+
+- **A revive is one heart, once per board** (`REVIVE`, `REVIVES_PER_BOARD`).
+  Stars are the hearts left at the win, so a revived board can still be won but
+  never cleanly, and the board comes back exactly as it was lost — no answer.
+  The save keeps `revived`, or leaving and returning would buy a second one.
+- **A video hint is given at once**, not stocked: the player pressed the bulb
+  because they wanted one now. It is offered only when there is one to give
+  (`hintToGive`); if the board has moved on by the time the video ends, it goes
+  into the stock instead. It still counts in `hintsUsed`.
+- **No SDK, no video, the reward anyway.** Expo Go can't carry the native ad
+  module and the web can't bundle it, so there `showRewarded` pays at once
+  (`adsSimulated`). The package is loaded only past that check
+  (`adsSdk.native.ts`): importing it looks its native module up and throws.
+- **Dev builds show Google's test ads** whatever `UNITS` says; a blank unit id
+  does too. Release builds show the real units in `UNITS`, under the app ids
+  in `app.json`.
+- **Consent before the SDK starts** (`initAds`, after the splash): Google's UMP
+  form where the law wants one, and no ad requests until it allows them.
+- **And it can be changed.** Where the law gives the player a way back to their
+  answer, Google says so (`privacyOptionsRequired`) and Settings grows a
+  **Privacy options** row that reopens the form (`showPrivacyOptions`). A new
+  answer that forbids ads counts the SDK as stopped, so the next video asks
+  again and finds nothing to show.
+- **Every ad is rated PG at most** (`maxAdContentRating`, set before the SDK
+  starts): the game is rated for everyone, and the videos it plays must be too.
+- **`app.json` carries the app ids twice.** The Expo plugin reads them from its
+  options; the SDK's own Gradle script reads a root-level
+  `"react-native-google-mobile-ads"` key, and in 17.2.0 its "key absent" branch
+  sets a misspelt property and then reads the real one — so without the key the
+  Android build fails with *Cannot get property 'googleMobileAdsJson'*. Keep the
+  two in step.
+- **An unshowable ad is a line, not an error**: "No video right now". The music
+  is held while a video plays (`sound.holdMusic`).
+
 ## The mountains: scenery and fog
 
 The ladder grew the board from 4×4 to 8×8 and then stopped — a ninth size would
@@ -723,7 +844,8 @@ shrink cells past what a thumb can hit, and a rectangle would touch every
 - **Scenery** (Mountain Pass, and Cloud Summit too): squares printed as rocks,
   pines or a lake (`Puzzle.scenery`), off the road by construction. They are
   *given* facts — the player never has to rule them out — and they read as
-  landscape, not as ✕, because every ✕ is the player's. The rules treat them like
+  landscape, not as ✕, because a ✕ is a note about a square and scenery is the
+  square itself. The rules treat them like
   printed pieces (`isGiven`): no mark lands on one, the road turns away from one
   for free (`isUnknown`), and a line counts it as spent when deciding whether its
   sign turns red.
@@ -817,11 +939,15 @@ course needs exactly its rule and arrives just before the first board that does
 (see "Techniques are taught when they're needed"). A player who
 does nothing but follow the hints must finish every board, and no hint may ever
 claim an empty square or rule out a road one; a crossed-out road square must be
-the first thing a hint fixes, and none may point at a green line's leftovers. The
+the first thing a hint fixes, and none may point at a green line's leftovers. A
+full line's sweep never crosses out road, never lands on scenery or a mark, never
+follows a fogged count, and once the road is all claimed has crossed out every
+other square. The
 mountain bands carry exactly their twists and the classic ones none; scenery only
 ever stands off the road; fog is on one axis, two lines or more, and a fogged sign
 never turns green or red. It
-also plays the tutorial's lessons by their script (see Onboarding).
+also plays the tutorial's lessons by their script (see Onboarding), sweeping as
+the game does, and fails a step the board has already done for the player.
 
 And the assertions this ladder exists for:
 

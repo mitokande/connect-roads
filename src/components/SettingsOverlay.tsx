@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 
+import { privacyOptionsRequired, showPrivacyOptions } from "../ads";
 import { haptics } from "../haptics";
 import { sound } from "../sound";
 import type { Progress } from "../state/useGame";
@@ -23,6 +24,16 @@ export function SettingsOverlay({
   onClose: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
+  // Only where the law owes the player a way back to their ad consent, and only
+  // once Google has said so — see `src/ads.ts`.
+  const [privacy, setPrivacy] = useState(false);
+  useEffect(() => {
+    let live = true;
+    privacyOptionsRequired().then((on) => live && setPrivacy(on));
+    return () => {
+      live = false;
+    };
+  }, []);
 
   return (
     <Pressable style={styles.backdrop} onPress={onClose}>
@@ -78,6 +89,19 @@ export function SettingsOverlay({
             <Ionicons name="play-circle" size={30} color={theme.accent} />
           </Row>
         </Pressable>
+
+        {privacy ? (
+          <Pressable
+            onPress={() => {
+              sound.press();
+              showPrivacyOptions();
+            }}
+          >
+            <Row icon="shield-checkmark" label="Privacy options">
+              <Ionicons name="chevron-forward-circle" size={30} color={theme.accent} />
+            </Row>
+          </Pressable>
+        ) : null}
 
         {confirming ? (
           <View style={styles.confirm}>

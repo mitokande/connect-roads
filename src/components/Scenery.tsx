@@ -29,14 +29,25 @@ export function Scenery({
   horizon = 0.62,
   sun = true,
   decor = true,
+  width,
+  height,
 }: {
   /** Where the far hills start, as a fraction of the screen height. */
   horizon?: number;
   sun?: boolean;
   /** Trees and cottages on the hills. */
   decor?: boolean;
+  /**
+   * The size to draw at, when it isn't the window's. On Android the window
+   * leaves out the system bars, so anything covering the whole screen passes
+   * its measured size rather than stopping short of the bottom.
+   */
+  width?: number;
+  height?: number;
 }) {
-  const { width: w, height: h } = useWindowDimensions();
+  const win = useWindowDimensions();
+  const w = width ?? win.width;
+  const h = height ?? win.height;
   const base = h * horizon;
 
   const hills = useMemo(
@@ -70,9 +81,9 @@ export function Scenery({
         <Path d={hills.mid} fill={theme.hillMid} />
         <Path d={hills.near} fill={theme.hillNear} />
       </Svg>
-      <Cloud y={h * 0.08} size={w * 0.3} ms={70000} offset={0.1} />
-      <Cloud y={h * 0.2} size={w * 0.2} ms={95000} offset={0.6} />
-      <Cloud y={h * 0.32} size={w * 0.24} ms={120000} offset={0.35} />
+      <Cloud y={h * 0.08} size={w * 0.3} span={w} ms={70000} offset={0.1} />
+      <Cloud y={h * 0.2} size={w * 0.2} span={w} ms={95000} offset={0.6} />
+      <Cloud y={h * 0.32} size={w * 0.24} span={w} ms={120000} offset={0.35} />
     </View>
   );
 }
@@ -115,8 +126,7 @@ function HillDecor({ w, y }: { w: number; y: number }) {
 }
 
 /** One puffy cloud, drifting left to right forever. */
-function Cloud({ y, size, ms, offset }: { y: number; size: number; ms: number; offset: number }) {
-  const { width } = useWindowDimensions();
+function Cloud({ y, size, span, ms, offset }: { y: number; size: number; span: number; ms: number; offset: number }) {
   const t = useRef(new Animated.Value(offset)).current;
   useEffect(() => {
     // Start part-way across so the sky is populated from the first frame, then
@@ -147,7 +157,7 @@ function Cloud({ y, size, ms, offset }: { y: number; size: number; ms: number; o
         position: "absolute",
         top: y,
         left: 0,
-        transform: [{ translateX: t.interpolate({ inputRange: [0, 1], outputRange: [-size, width + size * 0.2] }) }],
+        transform: [{ translateX: t.interpolate({ inputRange: [0, 1], outputRange: [-size, span + size * 0.2] }) }],
       }}
     >
       <Svg width={size} height={h}>

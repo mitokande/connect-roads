@@ -36,6 +36,12 @@
 // again picks it up (`src/game/save.ts` says what a save is and why the hearts
 // go with it). Only *Try again* deals a fresh board, and that is also the only
 // way back to three hearts.
+//
+// **A lost board can be brought back once, for a video** (`REVIVE`). It comes
+// back with one heart, not three: the stars are the hearts left at the win, so a
+// revived board can still be won but never cleanly, and a second loss on it is
+// final. What it does *not* do is reveal anything — the board returns exactly as
+// it was lost, the refused claim's ✕ included.
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
@@ -54,6 +60,7 @@ import {
   markAt,
   paveStep,
   shownPiece,
+  sweepSettled,
   withMark,
   type Marks,
 } from "../game/board";
@@ -73,6 +80,8 @@ import { restoreBoard, saveBoard, worthKeeping, type SavedBoard } from "../game/
 import { type Coord, type Puzzle } from "../game/types";
 
 export const MAX_HEARTS = 3;
+/** Times one board may be brought back from a loss by a video. */
+export const REVIVES_PER_BOARD = 1;
 export const STARTING_HINTS = 5;
 const HINT_CAP = 9;
 // Named for the game as it shipped first. It is a key, not a label: renaming
@@ -145,6 +154,8 @@ export type GameState = {
   /** Bumped whenever the board should shake. */
   shake: number;
   hintsUsed: number;
+  /** Times this board has been brought back from a loss (`REVIVE`). */
+  revived: number;
 };
 
 export type Action =
@@ -156,6 +167,8 @@ export type Action =
   | { type: "ROUTE"; route: Coord[] }
   | { type: "PAVE"; target: Coord }
   | { type: "HINT" }
+  /** A lost board back in play with one heart — paid for with a video. */
+  | { type: "REVIVE" }
   | { type: "RIDE_DONE" }
   | { type: "CLEAR_FLASH" };
 
@@ -166,10 +179,12 @@ function freshBoard(level: number): GameState {
 
 /**
  * A fresh board for any puzzle, not only a level's. `marks` lets the tutorial
- * open a board part-solved; the phase is read off them like anywhere else.
+ * open a board part-solved; the phase is read off them like anywhere else, and a
+ * line they already fill is swept like anywhere else (`sweepSettled`) — a board
+ * whose terminal meets a 1 opens with the rest of that line crossed.
  */
 export function boardFor(puzzle: Puzzle, level: number, marks?: Marks): GameState {
-  const m = marks ?? initialMarks(puzzle);
+  const m = sweepSettled(puzzle, marks ?? initialMarks(puzzle));
   return {
     level,
     puzzle,
@@ -184,18 +199,28 @@ export function boardFor(puzzle: Puzzle, level: number, marks?: Marks): GameStat
     tip: null,
     shake: 0,
     hintsUsed: 0,
+    revived: 0,
   };
 }
 
 /**
- * Marks after a change, plus the phase that change may have unlocked.
+ * Marks after a change, plus what that change settles: any line it filled has
+ * the rest of its squares crossed out (`sweepSettled`), and the phase it may
+ * have unlocked.
+ *
+ * Every change comes through here, so the sweep can't be missed by one route to
+ * a claim — a double tap, a push, a hint. It also means a full line's ✕ can't be
+ * rubbed out: a tap takes one off and the sweep puts it straight back. That is
+ * the claim's rule over again — the square is proved, and a mark that can only
+ * be true has nothing to gain from coming off.
  *
  * The road needs no looking after here. Claims only ever accumulate — nothing
  * takes one back (see `TAP`) — so a square the road stands on can't stop being
  * claimed underneath it, and every cell of the route stays one `connectStep`
  * would accept.
  */
-function settle(state: GameState, marks: Marks): GameState {
+function settle(state: GameState, changed: Marks): GameState {
+  const marks = sweepSettled(state.puzzle, changed);
   const phase: Phase = deductionComplete(state.puzzle, marks) ? "connect" : "deduce";
   return { ...state, marks, phase };
 }
@@ -220,10 +245,9 @@ function refuse(state: GameState, cell: Coord): GameState {
 /**
  * The route just drawn, and the win it may have completed.
  *
- * Winning also crosses out whatever is left unmarked (`crossOutRest`). The board
- * writes no ✕ of its own at any other moment — see the note there — but a
- * finished route means the deduction is finished too, so the last empties are
- * already proved and the grid may as well say so.
+ * Winning also crosses out whatever is left unmarked (`crossOutRest`): a finished
+ * route means the deduction is finished too, so the last empties are already
+ * proved and the grid may as well say so.
  */
 function laid(state: GameState, route: Coord[]): GameState {
   if (connectComplete(state.puzzle, route)) {
@@ -277,6 +301,7 @@ function apply(state: GameState, action: Action): GameState {
         route: back.route,
         hearts: back.hearts,
         hintsUsed: back.hintsUsed,
+        revived: back.revived,
       };
     }
 
@@ -373,6 +398,10 @@ function apply(state: GameState, action: Action): GameState {
         hintsUsed: state.hintsUsed + 1,
       };
     }
+
+    case "REVIVE":
+      if (!state.failed || state.revived >= REVIVES_PER_BOARD) return state;
+      return { ...state, failed: false, hearts: 1, revived: state.revived + 1, wrong: null };
 
     case "RIDE_DONE":
       return { ...state, riding: false, celebrate: true };
@@ -544,6 +573,7 @@ export function useGame() {
     state.route,
     state.hearts,
     state.hintsUsed,
+    state.revived,
     state.phase,
     state.failed,
     writeBoards,
@@ -583,6 +613,26 @@ export function useGame() {
     return true;
   }, [patch]);
 
+  /**
+   * Is there a hint to give on this board as it stands? Asked before a video is
+   * offered for one — nobody should sit through an ad to be told nothing.
+   */
+  const hintToGive = useCallback(
+    () => reduce(stateRef.current, { type: "HINT" }) !== stateRef.current,
+    [],
+  );
+
+  /**
+   * A hint paid for with a video. It is given at once — the player pressed the
+   * bulb because they wanted one now — and the stock is untouched. If the board
+   * has moved on and there is nothing to give, it goes into the stock instead:
+   * a video watched is never a reward lost.
+   */
+  const rewardHint = useCallback(() => {
+    if (reduce(stateRef.current, { type: "HINT" }) !== stateRef.current) dispatch({ type: "HINT" });
+    else patch({ hints: Math.min(HINT_CAP, progressRef.current.hints + 1) });
+  }, [patch]);
+
   // A failed board shows **nothing new** — see the note on `failed` at the top.
   // The solution used to be derived here and drawn dimmed under the player's own
   // marks; it isn't any more, and nothing is left that could draw it.
@@ -594,6 +644,8 @@ export function useGame() {
     newFleet,
     /** Something on this board would be lost by starting it again. */
     inProgress: !state.failed && state.phase !== "won" && worthKeeping(state, MAX_HEARTS),
+    /** A lost board that a video may still bring back. */
+    canRevive: state.failed && state.revived < REVIVES_PER_BOARD,
     start,
     retry: useCallback(() => start(state.level, true), [start, state.level]),
     tap: useCallback((cell: Coord) => dispatch({ type: "TAP", cell }), []),
@@ -605,7 +657,17 @@ export function useGame() {
     setRoute: useCallback((route: Coord[]) => dispatch({ type: "ROUTE", route }), []),
     pave: useCallback((target: Coord) => dispatch({ type: "PAVE", target }), []),
     rideDone: useCallback(() => dispatch({ type: "RIDE_DONE" }), []),
+    /**
+     * Bring the lost board on `level` back — the video for it has been watched.
+     * The level is the one the video was started on, so a reward landing late
+     * can never revive some other board.
+     */
+    revive: useCallback((level: number) => {
+      if (stateRef.current.level === level) dispatch({ type: "REVIVE" });
+    }, []),
     useHint,
+    hintToGive,
+    rewardHint,
     patch,
     reset: useCallback(() => {
       awarded.current = 0;

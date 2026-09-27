@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Platform, StyleSheet, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
+import { initAds } from "./src/ads";
 import { GameScreen } from "./src/components/GameScreen";
 import { GarageOverlay } from "./src/components/GarageOverlay";
 import { HelpOverlay } from "./src/components/HelpOverlay";
@@ -60,6 +61,12 @@ export default function App() {
   useEffect(() => {
     if (ready) NativeSplash.hideAsync().catch(() => {});
   }, [ready]);
+
+  // Ads wake once the title scene has bowed out, so a consent form — where the
+  // law asks for one — never lands on top of it (see `src/ads.ts`).
+  useEffect(() => {
+    if (!splash) initAds();
+  }, [splash]);
 
   // The stored preferences own the switches from the moment they load.
   useEffect(() => {

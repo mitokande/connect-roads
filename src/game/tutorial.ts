@@ -14,7 +14,7 @@
 // The order is the order a player needs the ideas in:
 //   1. the goal       a road from the start line to the flag (and the payoff)
 //   2. the numbers    a clue counts road squares; double tap claims one
-//   3. ruling out     a full line's rest is crossed out, which forces the rest
+//   3. ruling out     a full line's rest is crossed out for you, which forces the rest
 //   4. road that builds as it goes
 //
 // That is the *basics*, and it is all counting. Most of the ladder asks for more,
@@ -112,25 +112,17 @@ export const LESSONS: Lesson[] = [
     ],
   },
   {
-    // The top row's 1 is met by the printed start, so its rest is empty; so is
-    // the right column's. That leaves the middle row exactly two squares for its
-    // 2 — the chain the whole game is built from, in four moves.
+    // The top row's 1 is met by the printed start, so the board has already
+    // crossed out its rest; so is the right column's. That leaves the middle row
+    // exactly two squares for its 2 — and claiming the left one fills the left
+    // column, which crosses out the square under it on the spot. The chain the
+    // whole game is built from, happening in front of the player.
     board: "3|0,0,0|2,2,1|0.3.4.7.8|0.4",
     steps: [
       {
-        say: "A *green* number is full — no more road in that line",
+        say: "A *green* number is full — the rest of its line is ruled out",
         goal: { kind: "next" },
         gesture: { kind: "point", axis: "row", index: 0 },
-      },
-      {
-        say: "*Swipe* across the rest to rule them out",
-        goal: { kind: "cross", cells: [at(0, 1), at(0, 2)] },
-        gesture: { kind: "swipe" },
-      },
-      {
-        say: "Or *tap* one square",
-        goal: { kind: "cross", cells: [at(1, 2)] },
-        gesture: { kind: "tap" },
       },
       {
         say: "2 squares left for a 2 — *both* are road",
@@ -277,7 +269,8 @@ export const TECHNIQUES: Technique[] = [
       {
         // The second column owes one square, and there are two gaps. Put it in
         // the top one and the bottom one stays empty — which walls the top one in
-        // on three sides. So it is the bottom one.
+        // on three sides. So it is the bottom one, and claiming it fills the
+        // column, which crosses the top one out.
         board: "5|0,0,3|4,0,2|0.1.2.7.12.13.8.9.14.19.24.23.22.17.16.21.20|0.16",
         marks: "1112222111201012010111111",
         steps: [
@@ -292,14 +285,9 @@ export const TECHNIQUES: Technique[] = [
             gesture: { kind: "square", cell: at(2, 1) },
           },
           {
-            say: "So it's the *bottom* one — double tap it",
+            say: "So it's the *bottom* one — double tap it, and the column is full",
             goal: { kind: "claim", cells: [at(3, 1)] },
             gesture: { kind: "double" },
-          },
-          {
-            say: "…and the top one is empty. *Tap* it",
-            goal: { kind: "cross", cells: [at(2, 1)] },
-            gesture: { kind: "tap" },
           },
           {
             say: "Your turn — find the rest",

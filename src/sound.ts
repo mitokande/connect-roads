@@ -47,7 +47,9 @@ import wrongSrc from "../assets/sfx/wrong.wav";
 const SOURCES = {
   cross: [cross1, cross2, cross3],
   uncross: [uncrossSrc],
-  claim: [claimSrc],
+  // Two of the same take: a player double-tapping down a row claims faster
+  // than one voice rewinds, and a voice caught mid-rewind has to seek first.
+  claim: [claimSrc, claimSrc],
   wrong: [wrongSrc],
   pave: [pave1, pave2, pave3],
   unpave: [unpaveSrc],
@@ -120,10 +122,12 @@ for (const id of Object.keys(SOURCES) as Id[]) {
   }
 }
 
-// Sounds this small should behave like interface noises: audible with the ring
-// switch off, and never enough to duck someone's music or hold the session open.
+// A game's noises obey the ring switch: a phone set to silent is a promise the
+// player made to the room they're in, and a puzzle that clicks through it on the
+// bus is one that gets deleted. On iOS that makes the session `ambient`, which
+// also mixes with — never ducks — whatever music the player already has on.
 setAudioModeAsync({
-  playsInSilentMode: true,
+  playsInSilentMode: false,
   interruptionMode: "mixWithOthers",
   allowsRecording: false,
   shouldPlayInBackground: false,
@@ -181,6 +185,8 @@ function fire(id: Id) {
 
 const MUSIC_VOLUME = 0.32;
 let musicOn = false;
+/** Held off while something else has the speaker — a rewarded video (`src/ads.ts`). */
+let musicHeld = false;
 let musicPlayer: AudioPlayer | null = null;
 
 function syncMusic() {
@@ -191,7 +197,7 @@ function syncMusic() {
       musicPlayer.volume = MUSIC_VOLUME;
     }
     if (!musicPlayer) return;
-    if (musicOn) musicPlayer.play();
+    if (musicOn && !musicHeld) musicPlayer.play();
     else musicPlayer.pause();
   } catch {
     // No audio: a silent game, not a broken one.
@@ -206,6 +212,15 @@ export const sound = {
    * re-assert this on the first press too — see `App.tsx`. */
   setMusic(on: boolean) {
     musicOn = on;
+    syncMusic();
+  },
+  /**
+   * Pause the loop without touching the player's setting, and let it go again.
+   * A video ad brings its own soundtrack, and the tune under it would be a
+   * second one playing at once.
+   */
+  holdMusic(held: boolean) {
+    musicHeld = held;
     syncMusic();
   },
   /** One star landing, 1–3, each a step higher. */

@@ -2,22 +2,24 @@
 //
 // The board is a patch of lawn in a wooden tray, and everything the game draws
 // on it is something you could build in that tray: tarmac with painted lines,
-// a graded plot waiting for its road, a flag, a town. The screens around it are
-// sky and hills, so the board reads as the one object in a landscape rather than
-// as a widget on a page.
+// a square of taped-off tarmac waiting for its shape, a flag, a town. The screens
+// around it are sky and hills, so the board reads as the one object in a
+// landscape rather than as a widget on a page.
 //
 // Colour is still assigned by function, not decoration:
 //   asphalt / paint   the road itself, and nothing else
 //   lawn              an undecided square — the ground before anyone builds
-//   dirt              a claimed square: road is coming, its shape is not known
+//   fresh tarmac,     a claimed square: road works — road is here, its shape
+//   works tape        is not known
 //   accent (orange)   primary actions and the next thing to do
 //   good (green)      a clue that is settled, and success
 //   danger (red)      hearts and mistakes
-//   mark              the ✕ glyph, and only ever the player's own
+//   mark              the ✕ glyph
 //
-// There is one ✕ weight, because there is one author: the board never crosses
-// anything out on the player's behalf (see CLAUDE.md, "Every cross is the
-// player's"), so a scan of the grid never has to sort whose marks are whose.
+// There is one ✕ weight. The board writes some of them — the rest of a full line
+// (see CLAUDE.md, "A full line crosses itself out") — but those can only ever be
+// true, and they always sit under a green sign, so nothing about a ✕ needs a
+// second look to say who wrote it.
 
 import { FLEETS } from "./game/garage";
 import { bandFor, type RegionId } from "./game/levels";
@@ -72,17 +74,26 @@ export const theme = {
   cellHot: "rgba(255,244,170,0.88)",
   /** A refused claim. */
   cellWrong: "rgba(255,110,110,0.92)",
-  /** A claimed plot: graded earth, pegged out. */
-  dirt: "#E8C68B",
-  dirtDark: "#C9A064",
-  dirtPebble: "#B98F55",
-  /** The little road-works sign on a claimed plot. */
-  sign: "#FF9F1C",
-  signEdge: "#2E2A45",
 
   /** Tarmac, its darker edge, the painted lines. */
   asphalt: "#4B5263",
   asphaltEdge: "#353A48",
+  /**
+   * A claimed square's tarmac: fresh, a shade paler than the finished road and
+   * with its stones still showing, so the road the player has laid stays the
+   * darkest, cleanest thing on the board.
+   */
+  asphaltFresh: "#6A7182",
+  gritLight: "#8C93A3",
+  gritDark: "#555C6C",
+  /**
+   * The works tape round a claimed square, where its kerb will go. Yellow and
+   * black are used nowhere else on the board, so the tape can't be read as a
+   * hint (orange), a mistake (red) or a settled clue (green).
+   */
+  tape: "#FFC83D",
+  tapeStripe: "#3A3848",
+  tapeEdge: "#2E2A45",
   roadEdgeLine: "#F3F1EA",
   roadLine: "#FFD23F",
   /** The kerb stones either side of the tarmac. */

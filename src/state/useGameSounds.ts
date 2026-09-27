@@ -12,8 +12,14 @@
 // pass — a push into the unknown claims a square *and* extends the road — so the
 // rules are ranked and the loudest event wins. Two sounds landing on the same
 // frame is the difference between a game and a slot machine.
+//
+// It runs as a *layout* effect, at the commit rather than after the paint. The
+// haptics fire on the touch itself, so every frame the sound waits behind is a
+// frame it trails its own buzz — and a claim, which redraws its neighbours'
+// necks and may sweep a whole line, is exactly the change that takes longest to
+// paint.
 
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 
 import { blockedTotal, foundTotal } from "../game/board";
 import { sound } from "../sound";
@@ -22,7 +28,7 @@ import type { GameState } from "./useGame";
 /** Anything shaped like a board in play — a level, or a tutorial lesson. */
 type Board = Pick<
   GameState,
-  "level" | "marks" | "route" | "hintsUsed" | "shake" | "phase" | "riding" | "celebrate" | "failed"
+  "level" | "marks" | "route" | "hintsUsed" | "shake" | "phase" | "riding" | "celebrate" | "failed" | "revived"
 >;
 
 type Snapshot = {
@@ -36,6 +42,7 @@ type Snapshot = {
   riding: boolean;
   celebrate: boolean;
   failed: boolean;
+  revived: number;
 };
 
 const snapshot = (game: Board): Snapshot => ({
@@ -49,12 +56,13 @@ const snapshot = (game: Board): Snapshot => ({
   riding: game.riding,
   celebrate: game.celebrate,
   failed: game.failed,
+  revived: game.revived,
 });
 
 export function useGameSounds(game: Board) {
   const was = useRef<Snapshot | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const now = snapshot(game);
     const prev = was.current;
     was.current = now;
@@ -72,6 +80,8 @@ export function useGameSounds(game: Board) {
     // `fail` outranks `wrong` deliberately: losing the last heart bumps the
     // shake as well, and the claim being refused is no longer the news.
     if (now.failed && !prev.failed) sound.fail();
+    // A revived board is the board opening again, as it was left.
+    else if (now.revived > prev.revived) sound.open();
     else if (now.shake !== prev.shake) sound.wrong();
     else if (now.celebrate && !prev.celebrate) sound.win();
     else if (now.riding && !prev.riding) sound.drive();

@@ -7,8 +7,8 @@
 // Every motion is a native-driver translate, scale or fade, so the JS thread is
 // free for whatever is still loading behind it.
 
-import React, { useEffect, useRef } from "react";
-import { Animated, Easing, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Animated, Easing, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from "react-native";
 import Svg, { Line, Rect } from "react-native-svg";
 
 import { font, overlayLift, theme } from "../theme";
@@ -20,7 +20,16 @@ const SHOW_MS = 2100;
 const FADE_MS = 300;
 
 export function SplashScreen({ onDone }: { onDone: () => void }) {
-  const { width, height } = useWindowDimensions();
+  // Measured, not read off the window. The splash covers the whole screen, and
+  // on Android the "window" leaves out the system bars the app draws under — a
+  // scene sized to it stopped short of the bottom and the home screen's buttons
+  // showed through. Until the first layout there is only the sky, the native
+  // splash's own colour, so the hand-over from it can't flash.
+  const [box, setBox] = useState<{ width: number; height: number } | null>(null);
+  const measure = (e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    setBox((b) => (b && b.width === width && b.height === height ? b : { width, height }));
+  };
   const fade = useRef(new Animated.Value(1)).current;
   const logo = useRef(new Animated.Value(0)).current;
   const east = useRef(new Animated.Value(0)).current;
@@ -42,70 +51,92 @@ export function SplashScreen({ onDone }: { onDone: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  return (
+    <Animated.View style={[StyleSheet.absoluteFill, overlayLift, styles.sky, { opacity: fade }]} onLayout={measure}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={leave}>
+        {box ? <Scene width={box.width} height={box.height} logo={logo} east={east} west={west} /> : null}
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+/** Everything on the splash, laid out for the size it was measured at. */
+function Scene({
+  width,
+  height,
+  logo,
+  east,
+  west,
+}: {
+  width: number;
+  height: number;
+  logo: Animated.Value;
+  east: Animated.Value;
+  west: Animated.Value;
+}) {
   const roadY = height * 0.74;
   const roadH = 64;
   const carL = 70;
   const carW = 42;
 
   return (
-    <Animated.View style={[StyleSheet.absoluteFill, overlayLift, { opacity: fade }]}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={leave}>
-        <Scenery horizon={0.5} />
+    <>
+      <Scenery horizon={0.5} width={width} height={height} />
 
-        <View style={[styles.center, { top: height * 0.2 }]}>
-          <Animated.View
-            style={{
-              opacity: logo.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0, 1, 1] }),
-              transform: [
-                { scale: logo.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }) },
-                { translateY: logo.interpolate({ inputRange: [0, 1], outputRange: [-80, 0] }) },
-              ],
-            }}
-          >
-            <Logo size={Math.min(88, width * 0.19)} />
-          </Animated.View>
-        </View>
+      <View style={[styles.center, { top: height * 0.2 }]}>
+        <Animated.View
+          style={{
+            opacity: logo.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0, 1, 1] }),
+            transform: [
+              { scale: logo.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }) },
+              { translateY: logo.interpolate({ inputRange: [0, 1], outputRange: [-80, 0] }) },
+            ],
+          }}
+        >
+          <Logo size={Math.min(88, width * 0.19)} />
+        </Animated.View>
+      </View>
 
-        <View style={{ position: "absolute", left: 0, top: roadY, width, height: roadH }}>
-          <Svg width={width} height={roadH}>
-            <Rect x={0} y={0} width={width} height={roadH} fill={theme.kerb} />
-            <Rect x={0} y={5} width={width} height={roadH - 10} fill={theme.asphalt} />
-            <Line x1={0} y1={11} x2={width} y2={11} stroke={theme.roadEdgeLine} strokeWidth={2} />
-            <Line x1={0} y1={roadH - 11} x2={width} y2={roadH - 11} stroke={theme.roadEdgeLine} strokeWidth={2} />
-            <Line x1={0} y1={roadH / 2} x2={width} y2={roadH / 2} stroke={theme.roadLine} strokeWidth={3} strokeDasharray="18 14" />
-          </Svg>
-          <Animated.View
-            style={{
-              position: "absolute",
-              top: roadH * 0.52,
-              left: 0,
-              transform: [{ translateX: east.interpolate({ inputRange: [0, 1], outputRange: [-carL * 1.5, width + carL] }) }],
-            }}
-          >
-            <Car length={carL} width={carW * 0.62} />
-          </Animated.View>
-          <Animated.View
-            style={{
-              position: "absolute",
-              top: roadH * 0.12,
-              left: 0,
-              transform: [
-                { translateX: west.interpolate({ inputRange: [0, 1], outputRange: [width + carL, -carL * 1.5] }) },
-                { rotate: "180deg" },
-              ],
-            }}
-          >
-            <Car length={carL} width={carW * 0.62} body={theme.fleet[1].body} edge={theme.fleet[1].edge} roof={theme.fleet[1].roof} />
-          </Animated.View>
-        </View>
+      <View style={{ position: "absolute", left: 0, top: roadY, width, height: roadH }}>
+        <Svg width={width} height={roadH}>
+          <Rect x={0} y={0} width={width} height={roadH} fill={theme.kerb} />
+          <Rect x={0} y={5} width={width} height={roadH - 10} fill={theme.asphalt} />
+          <Line x1={0} y1={11} x2={width} y2={11} stroke={theme.roadEdgeLine} strokeWidth={2} />
+          <Line x1={0} y1={roadH - 11} x2={width} y2={roadH - 11} stroke={theme.roadEdgeLine} strokeWidth={2} />
+          <Line x1={0} y1={roadH / 2} x2={width} y2={roadH / 2} stroke={theme.roadLine} strokeWidth={3} strokeDasharray="18 14" />
+        </Svg>
+        <Animated.View
+          style={{
+            position: "absolute",
+            top: roadH * 0.52,
+            left: 0,
+            transform: [{ translateX: east.interpolate({ inputRange: [0, 1], outputRange: [-carL * 1.5, width + carL] }) }],
+          }}
+        >
+          <Car length={carL} width={carW * 0.62} />
+        </Animated.View>
+        <Animated.View
+          style={{
+            position: "absolute",
+            top: roadH * 0.12,
+            left: 0,
+            transform: [
+              { translateX: west.interpolate({ inputRange: [0, 1], outputRange: [width + carL, -carL * 1.5] }) },
+              { rotate: "180deg" },
+            ],
+          }}
+        >
+          <Car length={carL} width={carW * 0.62} body={theme.fleet[1].body} edge={theme.fleet[1].edge} roof={theme.fleet[1].roof} />
+        </Animated.View>
+      </View>
 
-        <Text style={[styles.tap, { top: roadY + roadH + 24 }]}>Tap to start</Text>
-      </Pressable>
-    </Animated.View>
+      <Text style={[styles.tap, { top: roadY + roadH + 24 }]}>Tap to start</Text>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
+  sky: { backgroundColor: theme.skyTop },
   center: { position: "absolute", left: 0, right: 0, alignItems: "center" },
   tap: {
     position: "absolute",

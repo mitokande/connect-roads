@@ -12,6 +12,10 @@
 // first three's answers written on it. The one way to fresh hearts is still the
 // one there always was — start the board again, with nothing on it.
 //
+// **So is the revive.** A lost board can be brought back once, for a video, and
+// the save remembers that it was: otherwise leaving and coming back would wipe
+// the slate, and a second loss on the same board would buy a second revive.
+//
 // What comes back from storage is **not trusted**. It is refused outright if it
 // names a different puzzle (the bank is rebuilt between versions) or asserts a ✓
 // on a square with no road — a ✓ is always true, and nothing, a stale save
@@ -22,14 +26,13 @@
 // decides what a save is.
 
 import {
-  blockedTotal,
   connectComplete,
-  foundTotal,
   initialMarks,
   isRoadCell,
   MARK_BLOCKED,
   MARK_NONE,
   MARK_ROAD,
+  openingMarks,
   replayRoute,
   type Marks,
 } from "./board";
@@ -43,6 +46,8 @@ export type BoardProgress = {
   route: Coord[];
   hearts: number;
   hintsUsed: number;
+  /** Times this board has been brought back from a loss. */
+  revived: number;
 };
 
 /** A board in progress, in the form it is stored. */
@@ -55,6 +60,8 @@ export type SavedBoard = {
   route: number[];
   hearts: number;
   hintsUsed: number;
+  /** Missing from saves written before the revive existed; read as none. */
+  revived?: number;
 };
 
 export type RestoredBoard = Omit<BoardProgress, "puzzle">;
@@ -67,20 +74,25 @@ export function saveBoard(board: BoardProgress): SavedBoard {
     route: board.route.map(({ r, c }) => r * puzzle.size + c),
     hearts: board.hearts,
     hintsUsed: board.hintsUsed,
+    revived: board.revived,
   };
 }
 
 /**
  * Is there anything on this board a player would mind losing?
  *
+ * Marks count against the board as it opens (`openingMarks`), not against an
+ * empty grid: a line a terminal already fills is crossed out before anyone
+ * touches it, and those crosses are nobody's work.
+ *
  * Hearts count on their own: a refused claim writes a ✕, but the player can rub
  * that ✕ out again, and a board that looks untouched with a heart gone is still
  * one that must not come back with three.
  */
 export function worthKeeping(board: BoardProgress, maxHearts: number): boolean {
+  const opening = openingMarks(board.puzzle);
   return (
-    foundTotal(board.marks) > board.puzzle.fixed.length ||
-    blockedTotal(board.marks) > 0 ||
+    board.marks.some((m, i) => m !== opening[i]) ||
     board.route.length > 0 ||
     board.hearts < maxHearts ||
     board.hintsUsed > 0
@@ -130,5 +142,6 @@ export function restoreBoard(
 
   const hintsUsed =
     Number.isInteger(saved.hintsUsed) && saved.hintsUsed > 0 ? saved.hintsUsed : 0;
-  return { marks, route, hearts, hintsUsed };
+  const revived = Number.isInteger(saved.revived) && saved.revived! > 0 ? saved.revived! : 0;
+  return { marks, route, hearts, hintsUsed, revived };
 }

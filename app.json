@@ -8,18 +8,21 @@
     "backgroundColor": "#6EC3F5",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.mithatcanturan.connecttracks",
+      "bundleIdentifier": "com.mithatcanturan.connectroads",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.mithatcanturan.connecttracks",
+      "package": "com.mithatcanturan.connectroads",
       "predictiveBackGestureEnabled": false,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#8DD05F"
-      }
+      },
+      "permissions": [
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -30,7 +33,8 @@
         "expo-audio",
         {
           "microphonePermission": false,
-          "recordAudioAndroid": false
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false
         }
       ],
       [
@@ -43,8 +47,26 @@
       ],
       "expo-font",
       "expo-status-bar",
-      "expo-asset"
+      "expo-asset",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-4604843322018757~3769896564",
+          "iosAppId": "ca-app-pub-4604843322018757~7537665465",
+          "userTrackingUsageDescription": "This lets us show you ads that are more relevant to you. Connect Roads works the same either way.",
+          "skAdNetworkItems": ["cstr6suwn9.skadnetwork"]
+        }
+      ]
     ],
-    "icon": "./assets/images/icon.png"
+    "icon": "./assets/images/icon.png",
+    "extra": {
+      "eas": {
+        "projectId": "64c34937-21c2-4e04-a177-f8a66abc9158"
+      }
+    }
+  },
+  "react-native-google-mobile-ads": {
+    "android_app_id": "ca-app-pub-4604843322018757~3769896564",
+    "ios_app_id": "ca-app-pub-4604843322018757~7537665465"
   }
 }

@@ -53,13 +53,20 @@ import type { Line } from "../game/deduce";
 import type { Paint } from "../game/garage";
 import { regionForSize, type RegionId } from "../game/levels";
 import {
+  bit,
+  DC,
   dirBetween,
+  DIRS,
+  DR,
+  hasDir,
   isFogged,
   isScenery,
   key,
+  opposite,
   same,
   type Coord,
   type Dir,
+  type Piece,
   type Puzzle,
 } from "../game/types";
 import { font, radius, theme } from "../theme";
@@ -312,6 +319,7 @@ export function Board(props: BoardProps) {
           c={c}
           piece={piece}
           claimed={piece === null && mark === MARK_ROAD}
+          ways={piece === null && mark === MARK_ROAD ? claimWays(puzzle, marks, drawn, r, c) : undefined}
           blocked={mark === MARK_BLOCKED}
           glow={(head !== null && head.r === r && head.c === c) || (!!hint && hint.r === r && hint.c === c)}
           wrong={!!wrong && wrong.r === r && wrong.c === c}
@@ -407,6 +415,49 @@ export function Board(props: BoardProps) {
       ) : null}
     </View>
   );
+}
+
+/**
+ * The sides a claimed square reaches out of (`ClaimGlyph`'s necks), as a
+ * direction mask: every side but one facing off the board, onto printed
+ * scenery, into a square a full line has crossed out, or into a whole piece of
+ * road — printed or laid — that turns away from it. Those are the board's own
+ * facts, and a neck into any of them would be a road that can't exist: out
+ * through the frame, over a rock, into a ✕ the board itself wrote, or a
+ * T-junction in the side of a straight. The road's moving end is only a stub,
+ * and still open, so a claim beside it keeps its neck that way.
+ *
+ * Any other ✕ is deliberately not consulted: outside a full line a ✕ is the
+ * player's note, unchecked and possibly wrong, and a claim whose necks withdrew
+ * from every one would draw "two ways out" for the player the moment the
+ * second-last neighbour was crossed — the deduction the board is there to leave
+ * to them.
+ */
+function claimWays(
+  puzzle: Puzzle,
+  marks: Marks,
+  drawn: Map<number, Piece>,
+  r: number,
+  c: number,
+): number {
+  const n = puzzle.size;
+  let ways = 0;
+  for (const d of DIRS) {
+    const nr = r + DR[d];
+    const nc = c + DC[d];
+    if (nr < 0 || nc < 0 || nr >= n || nc >= n) continue;
+    if (isScenery(puzzle, nr, nc)) continue;
+    // Proved empty: not road, in a line whose count its claims already meet.
+    const proved =
+      markAt(marks, n, nr, nc) !== MARK_ROAD &&
+      (lineSettled(puzzle, marks, nr, false) || lineSettled(puzzle, marks, nc, true));
+    if (proved) continue;
+    const other = shownPiece(puzzle, nr, nc) ?? drawn.get(key(nr, nc)) ?? null;
+    const whole = other !== null && (other & (other - 1)) !== 0;
+    if (whole && !hasDir(other, opposite(d))) continue;
+    ways |= bit(d);
+  }
+  return ways;
 }
 
 function cellAt(x: number, y: number, cell: number, n: number): Coord | null {

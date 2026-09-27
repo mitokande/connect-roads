@@ -31,6 +31,7 @@ import { Board } from "./Board";
 import { IconButton } from "./Button";
 import { FailOverlay } from "./FailOverlay";
 import { HelpOverlay } from "./HelpOverlay";
+import { HintOffer } from "./HintOffer";
 import { RestartConfirm } from "./RestartConfirm";
 import { Scenery } from "./Scenery";
 import { WinActions, WinConfetti, WinTitle } from "./WinCelebration";
@@ -49,8 +50,12 @@ export function GameScreen({
 }) {
   const [help, setHelp] = useState(false);
   const [confirmRestart, setConfirmRestart] = useState(false);
+  const [hintOffer, setHintOffer] = useState(false);
   // A question about one board never outlives it.
-  useEffect(() => setConfirmRestart(false), [game.level, game.failed, game.phase]);
+  useEffect(() => {
+    setConfirmRestart(false);
+    setHintOffer(false);
+  }, [game.level, game.failed, game.phase]);
   const { width, height } = useWindowDimensions();
   // Every noise the board makes, derived from what changed in it.
   useGameSounds(game);
@@ -216,9 +221,16 @@ export function GameScreen({
               <IconButton
                 size={66}
                 tone="gold"
-                badge={game.progress.hints}
-                disabled={game.progress.hints <= 0 || game.failed || game.phase === "won"}
-                onPress={() => game.useHint()}
+                // Out of stock, the count gives way to a video mark: the bulb
+                // still works, it just asks for a short ad first.
+                badge={
+                  game.progress.hints > 0 ? game.progress.hints : <Ionicons name="play" size={11} color="#FFFFFF" />
+                }
+                disabled={game.failed || game.phase === "won"}
+                onPress={() => {
+                  if (game.progress.hints > 0) game.useHint();
+                  else if (game.hintToGive()) setHintOffer(true);
+                }}
               >
                 <Ionicons name="bulb" size={32} color={theme.text} />
               </IconButton>
@@ -241,6 +253,7 @@ export function GameScreen({
           onCancel={() => setConfirmRestart(false)}
         />
       ) : null}
+      {hintOffer ? <HintOffer onReward={game.rewardHint} onClose={() => setHintOffer(false)} /> : null}
 
       {help ? <HelpOverlay onClose={() => setHelp(false)} /> : null}
     </View>

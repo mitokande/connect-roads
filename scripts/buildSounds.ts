@@ -249,13 +249,18 @@ const build: Record<string, () => Float32Array> = {
    * A claim accepted — a surveyor's stake going into soft ground, then a note
    * saying "yes". The committing move, so it has body: a low thump under a
    * two-note marimba step up a fourth.
+   *
+   * Both notes land early. The vibration fires on the touch itself, and a phone
+   * speaker can't play the thump, so what the ear takes as "the sound" is the
+   * first note it can hear: when the step started at 20ms and peaked at 95ms,
+   * the claim was heard trailing its own buzz.
    */
   claim: () => {
-    const b = new Float32Array(samples(360));
+    const b = new Float32Array(samples(320));
     noise(b, { ms: 40, gain: 0.5, lp: 900, hp: 120, curve: 9, seed: 11 });
     tone(b, { ms: 90, f: 150, to: 90, wave: "sine", gain: 0.7, attack: 2, curve: 7 });
-    mallet(b, P.G4, 20, 220, 0.8);
-    mallet(b, P.C5, 95, 260, 0.9);
+    mallet(b, P.G4, 0, 200, 0.85);
+    mallet(b, P.C5, 50, 260, 0.9);
     return finish(b, 0.6);
   },
 

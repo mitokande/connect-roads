@@ -30,13 +30,15 @@ import { theme } from "../theme";
 /**
  * All widths and offsets are fractions of the cell. The tarmac's width is
  * exported because anything painted *on* the road — the start line — has to be
- * exactly as wide as the road, and two constants would drift apart.
+ * exactly as wide as the road, and two constants would drift apart. The tarmac's
+ * hairline is exported for the same reason: a claimed square is laid with this
+ * road's own tarmac (`ClaimGlyph`), and has to stay laid with it.
  */
 export const ROAD_W = 0.46;
 /** Kerb stones either side of the tarmac. */
 const KERB_W = 0.06;
 /** A hairline of darker tarmac along its edge, so the kerb has something to sit on. */
-const EDGE_DARK = 0.025;
+export const EDGE_DARK = 0.025;
 /** The white edge lines, just inside the tarmac. */
 const EDGE_LINE_W = 0.022;
 const EDGE_OFF = ROAD_W / 2 - 0.05;

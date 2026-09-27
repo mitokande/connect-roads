@@ -34,6 +34,8 @@ import {
   stubDir,
   roadTotal,
   replayRoute,
+  openingMarks,
+  sweepSettled,
   withMark,
   type Marks,
 } from "./board";
@@ -254,8 +256,8 @@ function auditPlay(p: Puzzle, label: string) {
     `${label}: claimed count equals the road total`,
   );
 
-  // Every cross is the player's, so the tally the sound layer listens to only
-  // ever moves when the player moves it.
+  // Claiming writes no ✕ — sweeping a full line is its own step — so the tally
+  // the sound layer listens to moves only when a mark goes down or comes up.
   check(blockedTotal(marks) === 0, `${label}: a solved deduction has no crosses of its own`);
   check(
     blockedTotal(withMark(initialMarks(p), p.size, 0, 0, MARK_BLOCKED)) === 1 &&
@@ -263,12 +265,46 @@ function auditPlay(p: Puzzle, label: string) {
     `${label}: crossing one square out counts exactly one`,
   );
 
-  // Only a mark of the player's — or something the board printed — makes a
-  // square known. A settled row or column proves its leftovers empty, but the
-  // board keeps that to itself: it must not quietly exempt those squares from the
-  // road's push, or "refused" would mean "empty" and the drag would be a free
-  // probe. Scenery is the one printed empty, and it is no probe: everyone can see
-  // it. Otherwise unmarked is unknown, full stop.
+  // A full line crosses itself out — and that ✕ is never wrong, never lands on
+  // scenery or over a mark, and never gives a fogged count away. Walked claim by
+  // claim along the road, as a player might find it.
+  {
+    let walk = openingMarks(p);
+    let sound = true;
+    let careful = true;
+    let quietFog = true;
+    for (const cell of p.path) {
+      const before = withMark(walk, p.size, cell.r, cell.c, MARK_ROAD);
+      walk = sweepSettled(p, before);
+      for (let i = 0; i < walk.length; i++) {
+        if (walk[i] === before[i]) continue;
+        const r = Math.floor(i / p.size);
+        const c = i % p.size;
+        if (isRoadCell(p, r, c)) sound = false;
+        if (before[i] !== MARK_NONE || walk[i] !== MARK_BLOCKED || isScenery(p, r, c)) careful = false;
+        // Written only for a line the player can see is full — never read off a
+        // fogged count. Every square has a visible line on at least one axis.
+        const rowFull = !isFogged(p, false, r) && rowFound(p, before, r) >= p.rows[r];
+        const colFull = !isFogged(p, true, c) && colFound(p, before, c) >= p.cols[c];
+        if (!rowFull && !colFull) quietFog = false;
+      }
+    }
+    check(sound, `${label}: sweeping a full line never crosses out road`);
+    check(careful, `${label}: a sweep only fills unmarked squares, and never scenery`);
+    check(quietFog, `${label}: a sweep only follows a line whose count is showing`);
+    check(
+      walk.every((m, i) => m !== MARK_NONE || isScenery(p, Math.floor(i / p.size), i % p.size)),
+      `${label}: with the whole road claimed, every other square has been crossed out`,
+    );
+    check(sweepSettled(p, walk) === walk, `${label}: sweeping a swept board changes nothing`);
+  }
+
+  // Only a mark on the board — or something the board printed — makes a square
+  // known. A settled row or column proves its leftovers empty, and the board
+  // says so by drawing a ✕ there (`sweepSettled`); what `isUnknown` must never
+  // do is exempt those squares *without* one, or "refused" would mean "empty"
+  // and the drag would be a free probe. Scenery is the one printed empty, and it
+  // is no probe: everyone can see it. Otherwise unmarked is unknown, full stop.
   for (let r = 0; r < p.size; r++) {
     for (let c = 0; c < p.size; c++) {
       const settled = rowFound(p, marks, r) >= p.rows[r] || colFound(p, marks, c) >= p.cols[c];
@@ -561,7 +597,7 @@ function auditHints(p: Puzzle, label: string): number {
       marks = withMark(marks, p.size, r, c, MARK_ROAD);
     }
     // A hint that claims nothing is pointing at empty squares for the player to
-    // rule out themselves — the board never crosses anything out for them.
+    // rule out themselves — a hint never crosses anything out for them.
     if (!tip.claim.length) {
       for (const { r, c } of tip.point) {
         if (isRoadCell(p, r, c)) honest = false;
@@ -613,8 +649,8 @@ function auditSave(p: Puzzle, other: Puzzle, label: string) {
   const put = (s: string, i: number, m: number) => s.slice(0, i) + String(m) + s.slice(i + 1);
 
   check(
-    !worthKeeping({ puzzle: p, marks: initialMarks(p), route: [], hearts: MAX, hintsUsed: 0 }, MAX),
-    `${label}: an untouched board is not worth saving`,
+    !worthKeeping({ puzzle: p, marks: openingMarks(p), route: [], hearts: MAX, hintsUsed: 0, revived: 0 }, MAX),
+    `${label}: an untouched board is not worth saving, lines it opens full included`,
   );
 
   // Mid-board: half the road claimed and drawn as far as the claims allow, an
@@ -640,7 +676,7 @@ function auditSave(p: Puzzle, other: Puzzle, label: string) {
     if (!next) break;
     route = next;
   }
-  const board = { puzzle: p, marks, route, hearts: MAX - 1, hintsUsed: 1 };
+  const board = { puzzle: p, marks, route, hearts: MAX - 1, hintsUsed: 1, revived: 1 };
   check(worthKeeping(board, MAX), `${label}: a half-played board is worth saving`);
 
   // Through JSON, as AsyncStorage will carry it.
@@ -655,7 +691,10 @@ function auditSave(p: Puzzle, other: Puzzle, label: string) {
     );
     check(back.hearts === MAX - 1, `${label}: the hearts come back as left — leaving is no refill`);
     check(back.hintsUsed === 1, `${label}: the hints spent come back`);
+    check(back.revived === 1, `${label}: a spent revive comes back spent — leaving is no second one`);
   }
+  const { revived: _, ...older } = stored;
+  check(restoreBoard(p, older, MAX)?.revived === 0, `${label}: a save from before the revive reads as none spent`);
 
   check(restoreBoard(other, stored, MAX) === null, `${label}: a save for another board is refused`);
   const at = empty.r * p.size + empty.c;
@@ -696,7 +735,7 @@ function auditSave(p: Puzzle, other: Puzzle, label: string) {
   for (const { r, c } of p.path) all = withMark(all, p.size, r, c, MARK_ROAD);
   const finished = restoreBoard(
     p,
-    saveBoard({ puzzle: p, marks: all, route: p.path, hearts: MAX, hintsUsed: 0 }),
+    saveBoard({ puzzle: p, marks: all, route: p.path, hearts: MAX, hintsUsed: 0, revived: 0 }),
     MAX,
   );
   check(
@@ -1090,6 +1129,9 @@ console.log("Connect Roads — core tests\n");
       check(p.fixed.every((f) => markAt(marks, p.size, f.r, f.c) === MARK_ROAD), `${name}: its printed pieces start claimed`);
     }
     if (course.technique) teaches(course.technique, lesson, p, marks, name);
+    // Played as the screen plays it: through `boardFor`, which sweeps any line
+    // the opening marks already fill, and every move after that sweeps again.
+    marks = sweepSettled(p, marks);
     for (const step of lesson.steps) {
       const g = step.gesture;
       if (g?.kind === "square") {
@@ -1107,19 +1149,30 @@ console.log("Connect Roads — core tests\n");
         }
       }
       const goal = step.goal;
+      // The board can now finish a step before the player gets to it — a claim
+      // that fills a line crosses out its rest — and a step already done when it
+      // starts would flash past with the hand still demonstrating it.
+      if (goal.kind === "claim" || goal.kind === "cross") {
+        const want = goal.kind === "claim" ? MARK_ROAD : MARK_BLOCKED;
+        check(
+          goal.cells.some((c) => markAt(marks, p.size, c.r, c.c) !== want),
+          `${name}: "${step.say}" still has something to do when it starts`,
+        );
+      }
       if (goal.kind === "claim") {
         for (const c of goal.cells) {
           check(isRoadCell(p, c.r, c.c), `${name}: asks to claim (${c.r},${c.c}), which is road`);
-          marks = withMark(marks, p.size, c.r, c.c, MARK_ROAD);
+          marks = sweepSettled(p, withMark(marks, p.size, c.r, c.c, MARK_ROAD));
         }
       } else if (goal.kind === "cross") {
         for (const c of goal.cells) {
           check(!isRoadCell(p, c.r, c.c), `${name}: asks to cross out (${c.r},${c.c}), which is empty`);
-          marks = withMark(marks, p.size, c.r, c.c, MARK_BLOCKED);
+          marks = sweepSettled(p, withMark(marks, p.size, c.r, c.c, MARK_BLOCKED));
         }
       } else if (goal.kind === "solve") {
         check(!deductionComplete(p, marks), `${name}: leaves something to find on your turn`);
         for (const { r, c } of p.path) marks = withMark(marks, p.size, r, c, MARK_ROAD);
+        marks = sweepSettled(p, marks);
       } else if (goal.kind === "drive") {
         // Laid the way the hand shows it: from the start, square by square, each
         // step a legal move or a push that claims a true road square.
