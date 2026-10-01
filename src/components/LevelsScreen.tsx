@@ -1,7 +1,12 @@
-// Every level, as a road trip. Each grid size is a region with its own name and
-// colour, and the levels are stops along one winding road through it — the
-// bands are the difficulty curve, so drawing them as a journey shows the player
-// exactly what they're climbing and how far they've come.
+// Every level, as a road trip. Each band is a region with its own name, colour,
+// lawn and tray, and the levels are stops along one winding road through it —
+// the bands are the difficulty curve, so drawing them as a journey shows the
+// player exactly what they're climbing and how far they've come.
+//
+// Six hundred stops are too many to put on screen at once, so the map is a list
+// of regions that draws only the ones near the screen. Every region's height is
+// a sum of fixed parts (`regionHeight`), which is what lets the list open on the
+// car's region without drawing everything above it first.
 //
 // Stops show what they have to show and nothing more: a cleared level carries
 // its best star record, the current one pulses with a car parked on it, and the
@@ -18,8 +23,8 @@ import React, { useEffect, useMemo, useRef } from "react";
 import {
   Animated,
   Easing,
+  FlatList,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -30,7 +35,7 @@ import Svg, { Path } from "react-native-svg";
 import { BANDS, bandFor, bandLevels, LEVEL_COUNT, type Band } from "../game/levels";
 import { haptics } from "../haptics";
 import { sound } from "../sound";
-import { font, radius, REGIONS, shadow, theme } from "../theme";
+import { font, LOOKS, radius, REGIONS, shadow, theme } from "../theme";
 import { IconButton } from "./Button";
 import { Car } from "./CarRide";
 import { Scenery } from "./Scenery";
@@ -47,6 +52,13 @@ const TOWN = 30;
 const TOWN_BESIDE = 40;
 /** Under a stop, beneath its stars. */
 const TOWN_UNDER = 59;
+/** A region's sign: fixed, so every region's height is known before it is drawn. */
+const SIGN_H = 64;
+/** The list's padding above the first region. */
+const PAD = 14;
+
+/** How tall a region is on the map — sign, field and the gap after it. */
+const regionHeight = (count: number) => SIGN_H - 10 + Math.ceil(count / PER_ROW) * ROW_H + 40 + 8 + 22;
 
 export function LevelsScreen({
   unlockedLevel,
@@ -64,8 +76,20 @@ export function LevelsScreen({
 }) {
   const { width } = useWindowDimensions();
   const mapW = Math.min(width - 36, 460);
-  const scroll = useRef<ScrollView>(null);
+  const list = useRef<FlatList<{ band: Band; levels: number[] }>>(null);
   const bands = useMemo(() => BANDS.map((band) => ({ band, levels: bandLevels(band) })), []);
+  // Every region's top, worked out rather than measured: sixteen regions and six
+  // hundred stops are too many to draw at once, so the list only draws the ones
+  // near the screen, and it has to know where the rest are without drawing them.
+  const tops = useMemo(() => {
+    const out: number[] = [];
+    let y = PAD;
+    for (const { levels } of bands) {
+      out.push(y);
+      y += regionHeight(levels.length);
+    }
+    return out;
+  }, [bands]);
 
   const current = Math.min(unlockedLevel, LEVEL_COUNT);
   const currentBand = bandFor(current);
@@ -73,13 +97,13 @@ export function LevelsScreen({
 
   // Open on the region the car is in, with its row of stops in view.
   const scrolled = useRef(false);
-  const onBandLayout = (band: Band, y: number) => {
-    if (scrolled.current || band !== currentBand) return;
+  const openOnCar = () => {
+    if (scrolled.current) return;
     scrolled.current = true;
-    const levels = bandLevels(band);
-    const row = Math.floor(levels.indexOf(current) / PER_ROW);
-    const target = Math.max(0, y + 80 + row * ROW_H - 180);
-    setTimeout(() => scroll.current?.scrollTo({ y: target, animated: false }), 0);
+    const i = BANDS.indexOf(currentBand);
+    const row = Math.floor(bands[i].levels.indexOf(current) / PER_ROW);
+    const target = Math.max(0, tops[i] + 80 + row * ROW_H - 180);
+    setTimeout(() => list.current?.scrollToOffset({ offset: target, animated: false }), 0);
   };
 
   return (
@@ -96,27 +120,35 @@ export function LevelsScreen({
         </View>
       </View>
 
-      <ScrollView
-        ref={scroll}
+      <FlatList
+        ref={list}
+        data={bands}
+        keyExtractor={({ band }) => `${band.first}`}
+        getItemLayout={(_, index) => ({
+          length: regionHeight(bands[index].levels.length),
+          offset: tops[index],
+          index,
+        })}
+        initialNumToRender={2}
+        maxToRenderPerBatch={2}
+        windowSize={5}
+        onLayout={openOnCar}
         contentContainerStyle={[styles.scroll, { width: mapW + 36 }]}
         style={{ alignSelf: "center" }}
         showsVerticalScrollIndicator={false}
-      >
-        {bands.map(({ band, levels }) => (
-          <View key={band.first} onLayout={(e) => onBandLayout(band, e.nativeEvent.layout.y)}>
-            <Region
-              band={band}
-              levels={levels}
-              width={mapW}
-              unlockedLevel={unlockedLevel}
-              stars={stars}
-              paint={paint}
-              onPick={onPick}
-            />
-          </View>
-        ))}
-        <Text style={styles.footer}>More roads coming soon!</Text>
-      </ScrollView>
+        renderItem={({ item: { band, levels } }) => (
+          <Region
+            band={band}
+            levels={levels}
+            width={mapW}
+            unlockedLevel={unlockedLevel}
+            stars={stars}
+            paint={paint}
+            onPick={onPick}
+          />
+        )}
+        ListFooterComponent={<Text style={styles.footer}>More roads coming soon!</Text>}
+      />
     </View>
   );
 }
@@ -139,6 +171,7 @@ function Region({
   onPick: (level: number) => void;
 }) {
   const region = REGIONS[band.region];
+  const look = LOOKS[band.region];
   const { size } = band;
   const locked = levels[0] > unlockedLevel;
   const earned = levels.reduce((a, l) => a + (stars[l] ?? 0), 0);
@@ -191,7 +224,18 @@ function Region({
         )}
       </View>
 
-      <View style={[styles.field, { width: width + 8, height: height + 8, opacity: locked ? 0.75 : 1 }]}>
+      <View
+        style={[
+          styles.field,
+          {
+            width: width + 8,
+            height: height + 8,
+            opacity: locked ? 0.75 : 1,
+            backgroundColor: look.lawn[0],
+            borderColor: look.wood[0],
+          },
+        ]}
+      >
         <Svg width={width} height={height} style={StyleSheet.absoluteFill}>
           <Path d={d} stroke={theme.kerbDark} strokeWidth={30} fill="none" strokeLinejoin="round" />
           <Path d={d} stroke={theme.kerb} strokeWidth={27} fill="none" strokeLinejoin="round" />
@@ -365,21 +409,21 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.panelEdge,
   },
   starText: { fontFamily: font.bold, color: theme.text, fontSize: 17 },
-  scroll: { padding: 14, paddingBottom: 60 },
+  scroll: { paddingHorizontal: PAD, paddingTop: PAD, paddingBottom: 60 },
   region: { marginBottom: 22 },
   sign: {
     flexDirection: "row",
     alignItems: "center",
+    height: SIGN_H,
     paddingHorizontal: 16,
-    paddingVertical: 10,
     borderRadius: radius.md + 4,
     borderBottomWidth: 5,
     marginBottom: -10,
     zIndex: 2,
     ...shadow,
   },
-  signTitle: { fontFamily: font.bold, fontSize: 20, color: "#FFFFFF" },
-  signSub: { fontFamily: font.medium, fontSize: 13.5, color: "rgba(255,255,255,0.92)" },
+  signTitle: { fontFamily: font.bold, fontSize: 20, lineHeight: 25, color: "#FFFFFF" },
+  signSub: { fontFamily: font.medium, fontSize: 13.5, lineHeight: 18, color: "rgba(255,255,255,0.92)" },
   signStars: {
     flexDirection: "row",
     alignItems: "center",

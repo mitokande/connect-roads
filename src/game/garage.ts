@@ -9,8 +9,10 @@
 //
 // **Still a record, not a rule.** Nothing about play reads a paint job, stars are
 // never spent (a threshold opens a fleet for good), and the last fleet sits at
-// 360 of the ladder's 450 — a real goal, reachable only by winning most boards
-// without losing a heart.
+// 1480 of the ladder's 1800 — a real goal, reachable only by winning most boards
+// without losing a heart. The first seven are paced for the first road trip (the
+// gold convoy at 360 of its 450); the rest arrive along the second, one to a
+// region or so, each dressed for somewhere the road goes.
 
 /** One car's paint: body, the darker line round it, and its roof. */
 export type Paint = { body: string; edge: string; roof: string };
@@ -107,6 +109,90 @@ export const FLEETS: Fleet[] = [
       { body: "#FFD54A", edge: "#B8860B", roof: "#FFF3C4" },
       { body: "#F2B705", edge: "#9C6F04", roof: "#FFE38A" },
       { body: "#FFD54A", edge: "#B8860B", roof: "#FFF3C4" },
+    ],
+  },
+  {
+    id: "buggy",
+    name: "Beach buggies",
+    stars: 480,
+    paints: [
+      { body: "#2DC6D6", edge: "#1A94A1", roof: "#FFFFFF" },
+      { body: "#FF7A6B", edge: "#D1503F", roof: "#FFFFFF" },
+      { body: "#9BE15D", edge: "#68AD2E", roof: "#FFFFFF" },
+      { body: "#FFD23F", edge: "#D6A218", roof: "#FFFFFF" },
+      { body: "#FF8FC4", edge: "#D65E97", roof: "#FFFFFF" },
+    ],
+  },
+  {
+    id: "harvest",
+    name: "Harvest run",
+    stars: 620,
+    paints: [
+      { body: "#4E9E37", edge: "#347526", roof: "#FFD23F" },
+      { body: "#D9483B", edge: "#A5322A", roof: "#F4F1EA" },
+      { body: "#4E9E37", edge: "#347526", roof: "#FFD23F" },
+      { body: "#E8743B", edge: "#B55322", roof: "#F4F1EA" },
+      { body: "#4E9E37", edge: "#347526", roof: "#FFD23F" },
+    ],
+  },
+  {
+    id: "rally",
+    name: "Desert rally",
+    stars: 780,
+    paints: [
+      { body: "#E8C98A", edge: "#B8955A", roof: "#E8743B" },
+      { body: "#D9A95E", edge: "#A67A36", roof: "#2E2A45" },
+      { body: "#E8C98A", edge: "#B8955A", roof: "#E8743B" },
+      { body: "#D9A95E", edge: "#A67A36", roof: "#2E2A45" },
+      { body: "#E8C98A", edge: "#B8955A", roof: "#E8743B" },
+    ],
+  },
+  {
+    id: "snowcat",
+    name: "Snowcats",
+    stars: 950,
+    paints: [
+      { body: "#F5F9FC", edge: "#A9BDD0", roof: "#35BFD9" },
+      { body: "#DDEFF8", edge: "#96B6CC", roof: "#FF7A6B" },
+      { body: "#F5F9FC", edge: "#A9BDD0", roof: "#35BFD9" },
+      { body: "#DDEFF8", edge: "#96B6CC", roof: "#FF7A6B" },
+      { body: "#F5F9FC", edge: "#A9BDD0", roof: "#35BFD9" },
+    ],
+  },
+  {
+    id: "lantern",
+    name: "Lantern parade",
+    stars: 1120,
+    paints: [
+      { body: "#D9443A", edge: "#A32C24", roof: "#FFD27A" },
+      { body: "#E85D3A", edge: "#B03F22", roof: "#FFD27A" },
+      { body: "#D9443A", edge: "#A32C24", roof: "#FFD27A" },
+      { body: "#E85D3A", edge: "#B03F22", roof: "#FFD27A" },
+      { body: "#D9443A", edge: "#A32C24", roof: "#FFD27A" },
+    ],
+  },
+  {
+    id: "lava",
+    name: "Lava flow",
+    stars: 1300,
+    paints: [
+      { body: "#3E3438", edge: "#1F1A1C", roof: "#FF7A3D" },
+      { body: "#4A3F44", edge: "#262022", roof: "#FFB84D" },
+      { body: "#3E3438", edge: "#1F1A1C", roof: "#FF5A3D" },
+      { body: "#4A3F44", edge: "#262022", roof: "#FFB84D" },
+      { body: "#3E3438", edge: "#1F1A1C", roof: "#FF7A3D" },
+    ],
+  },
+  {
+    id: "royal",
+    name: "Royal procession",
+    stars: 1480,
+    paints: [
+      { body: "#6A3FA8", edge: "#46267A", roof: "#FFD54A" },
+      { body: "#8C3B5E", edge: "#652440", roof: "#FFD54A" },
+      { body: "#6A3FA8", edge: "#46267A", roof: "#FFD54A" },
+      { body: "#8C3B5E", edge: "#652440", roof: "#FFD54A" },
+      { body: "#6A3FA8", edge: "#46267A", roof: "#FFD54A" },
     ],
   },
 ];

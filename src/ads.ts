@@ -20,12 +20,18 @@
 // SDK. It runs once at launch, and again at the first video if it failed then —
 // a phone offline at launch had no form to show.
 //
+// **Then, on iOS, Apple's tracking prompt** (App Tracking Transparency), after
+// Google's form as Google asks and before any ad request, since the answer is
+// read at request time. The OS shows it once per install and answers every later
+// ask itself, so asking at each start costs nothing. Declining changes nothing in
+// the game — the prompt's own text says so — only which ads are served.
+//
 // **One ad is kept loaded per placement**, so the video starts when the button
 // is pressed rather than after a load. A rewarded ad goes stale after an hour, so
 // an old one is dropped and fetched again.
 
 import { isRunningInExpoGo } from "expo";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 
 import { loadAdSdk, type AdSdk as Sdk } from "./adsSdk";
 import { sound } from "./sound";
@@ -111,6 +117,7 @@ async function start(m: Sdk): Promise<boolean> {
     await m.AdsConsent.gatherConsent().catch(() => {});
     const { canRequestAds } = await m.AdsConsent.getConsentInfo();
     if (!canRequestAds) return false;
+    await askToTrack();
     // Set before the SDK starts, so no request ever goes out without it. The
     // game is rated for everyone, and the videos it plays have to be too.
     await m.default().setRequestConfiguration({ maxAdContentRating: m.MaxAdContentRating.PG });
@@ -121,6 +128,35 @@ async function start(m: Sdk): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Apple's tracking prompt, on iOS. Only an active app can show it — asked while
+ * the app is still coming up or has been left, iOS answers "no" without a word,
+ * and App Review rejects a build whose prompt it never saw — so it waits for the
+ * app to be active first. The module is loaded here rather than imported:
+ * loading it looks up its native module, which the web lacks.
+ */
+async function askToTrack(): Promise<void> {
+  if (Platform.OS !== "ios") return;
+  try {
+    const att = require("expo-tracking-transparency") as typeof import("expo-tracking-transparency");
+    await whenActive();
+    await att.requestTrackingPermissionsAsync();
+  } catch {
+    // No prompt to show: the ads go out untracked, which is the safe side.
+  }
+}
+
+function whenActive(): Promise<void> {
+  if (AppState.currentState === "active") return Promise.resolve();
+  return new Promise((resolve) => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active") return;
+      sub.remove();
+      resolve();
+    });
+  });
 }
 
 /**

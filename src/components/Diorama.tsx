@@ -13,10 +13,11 @@ import React, { useEffect, useMemo, useRef } from "react";
 import { Animated, Easing, StyleSheet, View } from "react-native";
 
 import { dirBetween, hasDir, piece, type Coord, type Dir } from "../game/types";
-import { theme } from "../theme";
+import { lookFor, theme } from "../theme";
 import { Lawn } from "./Board";
 import { Car } from "./CarRide";
-import { TownArt } from "./Town";
+import type { RegionId } from "../game/levels";
+import { TOWNS, TownArt, type TownKind } from "./Town";
 import type { Paint } from "../game/garage";
 import { RoadPiece } from "./RoadPiece";
 
@@ -71,12 +72,16 @@ export function Diorama({
   width,
   rows: ROWS = 3,
   paints = theme.fleet,
+  region,
 }: {
   width: number;
   rows?: number;
   /** The garage's paint job, so the front door shows the player's own convoy. */
   paints?: readonly Paint[];
+  /** The region the player has got to: its tray, its lawn, its town. */
+  region?: RegionId;
 }) {
+  const look = lookFor(region);
   const frame = 10;
   const cell = Math.floor((width - frame * 2) / COLS);
   const cells = useMemo(() => loopCells(ROWS), [ROWS]);
@@ -117,8 +122,10 @@ export function Diorama({
     return { c, p: piece(back, fwd) };
   });
 
-  const inner: { r: number; c: number; kind: "house" | "trees" | "pond" | "garden"; h: number }[] = [];
-  const kinds = ["house", "trees", "house", "pond", "trees", "garden", "house", "trees"] as const;
+  const inner: { r: number; c: number; kind: TownKind; h: number }[] = [];
+  const kinds: readonly TownKind[] = region
+    ? TOWNS[region]
+    : ["house", "trees", "house", "pond", "trees", "garden", "house", "trees"];
   let k = 0;
   for (let r = 1; r < ROWS - 1; r++) for (let c = 1; c < COLS - 1; c++) inner.push({ r, c, kind: kinds[k++ % kinds.length], h: (k * 0.37) % 1 });
 
@@ -126,9 +133,21 @@ export function Diorama({
   const wide = cell * 0.38;
 
   return (
-    <View style={[styles.tray, { padding: frame, borderRadius: frame + 8 }]} pointerEvents="none">
+    <View
+      style={[
+        styles.tray,
+        {
+          padding: frame,
+          borderRadius: frame + 8,
+          backgroundColor: look.wood[0],
+          borderTopColor: look.wood[1],
+          borderBottomColor: look.wood[2],
+        },
+      ]}
+      pointerEvents="none"
+    >
       <View style={{ width: cell * COLS, height: cell * ROWS, overflow: "hidden", borderRadius: 6 }}>
-        <Lawn n={COLS} cell={cell} />
+        <Lawn n={COLS} cell={cell} colours={look.lawn} />
         {pieces.map(({ c, p }) => (
           <View key={`${c.r}:${c.c}`} style={{ position: "absolute", left: c.c * cell, top: c.r * cell }}>
             <RoadPiece size={cell} piece={p} />

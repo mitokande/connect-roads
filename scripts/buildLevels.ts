@@ -27,7 +27,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { encodePuzzle } from "../src/game/codec";
-import { ladderScore, type Grade } from "../src/game/deduce";
+import { deduce, deduceInput, ladderScore, type Grade } from "../src/game/deduce";
 import { generateGraded, withBonusReveals, type GradedPuzzle } from "../src/game/generator";
 import {
   BANDS,
@@ -173,6 +173,61 @@ for (const band of BANDS) {
 
   footholds.set(band.first, settled);
 
+  // **The grace levels are re-ordered with their bonus piece on.** A printed
+  // piece lowers the played grade by however much that one piece happens to
+  // give away, so two grace boards sorted correctly without it can come out the
+  // wrong way round with it — which the ramp test reads as a dip. So each
+  // arrangement is scored with the pieces it would really ship with, and the
+  // first that climbs is kept. Failing that, the bonus piece itself is re-drawn:
+  // it is baked into the bank line, so which one a level gets is free to choose.
+  const grace = Math.min(GRACE_LEVELS, levels.length);
+  const bonusSeed = (level: number, k: number) => (k === 0 ? levelSeed(level) : (levelSeed(level) ^ Math.imul(k, 0x27d4eb2d)) >>> 0);
+  const shipped = (cand: Candidate, level: number, seed: number) =>
+    ladderScore(cand.gate, deduce(deduceInput(withBonusReveals(cand.puzzle, 1, seed)), tierCapForLevel(level)).grade);
+  const orders: number[][] = [];
+  const permute = (rest: number[], acc: number[]) => {
+    if (!rest.length) orders.push(acc);
+    rest.forEach((x, k) => permute([...rest.slice(0, k), ...rest.slice(k + 1)], [...acc, x]));
+  };
+  permute([...Array(grace).keys()], []);
+  /** For each grace slot of an order, the bonus seed that keeps it climbing — or null. */
+  const arrange = (order: number[], redraw: boolean): number[] | null => {
+    const seeds: number[] = [];
+    let prev = -Infinity;
+    for (let slot = 0; slot < order.length; slot++) {
+      const level = levels[slot];
+      const tries = redraw ? 16 : 1;
+      let best: { seed: number; score: number } | null = null;
+      for (let k = 0; k < tries; k++) {
+        const seed = bonusSeed(level, k);
+        const score = shipped(picked[order[slot]], level, seed);
+        // The lowest score that still climbs leaves the most room for the next.
+        if (score >= prev && (!best || score < best.score)) best = { seed, score };
+      }
+      if (!best) return null;
+      seeds.push(best.seed);
+      prev = best.score;
+    }
+    return seeds;
+  };
+  const graceSeeds = new Map<number, number>();
+  let settledOrder: { order: number[]; seeds: number[] } | null = null;
+  for (const redraw of [false, true]) {
+    for (const order of orders) {
+      const seeds = arrange(order, redraw);
+      if (seeds) {
+        settledOrder = { order, seeds };
+        break;
+      }
+    }
+    if (settledOrder) break;
+  }
+  if (settledOrder) {
+    const head = settledOrder.order.map((k) => picked[k]);
+    picked.splice(0, grace, ...head);
+    settledOrder.seeds.forEach((seed, slot) => graceSeeds.set(levels[slot], seed));
+  }
+
   levels.forEach((level, i) => {
     const chosen = picked[i];
     const allowed = tierCapForLevel(level);
@@ -187,7 +242,8 @@ for (const band of BANDS) {
     }
     // Grace levels get one extra piece: difficulty, not correctness.
     const bonus = bandIndex(level) < GRACE_LEVELS ? 1 : 0;
-    banks.set(level, encodePuzzle(withBonusReveals(chosen.puzzle, bonus, levelSeed(level))));
+    const seed = graceSeeds.get(level) ?? levelSeed(level);
+    banks.set(level, encodePuzzle(withBonusReveals(chosen.puzzle, bonus, seed)));
     grades.set(level, chosen.grade);
   });
 }

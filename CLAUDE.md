@@ -13,7 +13,7 @@ pieces are printed on the board from the start (the two terminals), plus one or
 two more when the generator needs them to force a unique answer.
 
 Every shipped board has exactly **one** solution, and `npm test` re-proves that
-for all 150 of them from the clues alone.
+for all 600 of them from the clues alone.
 
 A road piece joins exactly two of a square's four edges, so there are six of
 them: two straights and four curves. Internally a piece is just a **2-bit mask**
@@ -274,7 +274,7 @@ src/game/                   pure, headless, no React — the whole rulebook
 src/state/useGame.ts        board reducer + AsyncStorage progress and unfinished boards
 src/state/useGameSounds.ts  what the board sounds like, derived from what changed
 src/components/             Board, Cell, RoadPiece, CarRide, screens, overlays
-  Scenery.tsx               sky, sun, drifting clouds, hills — every screen's backdrop
+  Scenery.tsx               sky, sun or moon, weather, the region's skyline, hills — every backdrop
   Diorama.tsx               the home screen's looping mini-board with traffic
   Town.tsx                  the town that grows round the road, region by region
   GarageOverlay.tsx         the paint jobs, opened from the home screen's star count
@@ -284,7 +284,7 @@ src/components/             Board, Cell, RoadPiece, CarRide, screens, overlays
 src/haptics.ts              vibration, one switch
 src/ads.ts                  rewarded video (revive, hint); skipped with the reward paid in Expo Go and on the web
 src/sound.ts                sound effects and the music loop, one switch each
-src/theme.ts                palette, fonts, regions; colour is assigned by function
+src/theme.ts                palette, fonts, regions and their looks; colour is assigned by function
 assets/sfx/                 GENERATED — the baked sounds and music
 assets/images/              GENERATED — icon, adaptive icon, splash, favicon
 scripts/buildLevels.ts      npm run levels:build
@@ -358,7 +358,8 @@ ran out, and the generator throws such candidates away rather than shipping a
 board it can't vouch for.
 
 **The bank, and why it is *sorted*.** `npm run levels:build` bakes every level into
-`src/game/levelData.ts` as one line each (~66s), and `puzzleForLevel` parses
+`src/game/levelData.ts` as one line each (~8 min for all 600; one band is seconds to
+a few minutes), and `puzzleForLevel` parses
 instead of searching — building an 8×8 that is both deducible and single-shaped
 takes around half a second, which is a frozen screen on a phone.
 
@@ -372,6 +373,16 @@ Keeping the hardest is a counterweight, not greed: deducible boards are rare and
 the easy ones are far commoner, so taking the first acceptable candidate fills the
 whole ladder with T1/T2 boards. A first cut of this script did exactly that — every
 band came out T1/T2 with nothing above it.
+
+**The grace levels are sorted with their bonus piece on.** The first three of a
+band ship with an extra printed piece, and a piece lowers the played grade by
+however much it happens to give away — so two boards in the right order without it
+can swap with it, which the ramp test reads as a dip (it bit Lantern Town and
+Blossom Valley on their first bake). The builder scores every arrangement of the
+grace boards with the pieces each would really ship with and keeps the first that
+climbs; failing that it re-draws the bonus piece itself, which is free to choose
+because it is baked into the line. The unchanged order with the old piece is tried
+first, so a band that already climbed bakes exactly as it did.
 
 **No clue is ever 0** (`touchesEveryLine`). The road reaches every row and every
 column, so there is no line the player crosses off in one sweep without reading
@@ -549,11 +560,50 @@ so "Metropolis" looked exactly like "Meadow Lane" at the one moment it mattered.
 Now the meadows are fields, barns, hay and sheep; the village cottages, gardens
 and a well; the market town shops under striped awnings and market stalls; the
 riverside terraces and canals with boats; the city rooftops, helipads and
-fountains — the board size says which. Every piece is a toy seen from above in
+fountains — the band says which. The second road trip's nine build theirs: beach
+huts, a lighthouse and boats in Harbour Bay; orchards, pumpkins and beehives in
+Orchard Hills; adobe houses, cacti and mesas in Sunset Canyon; palms, tiki huts and
+lagoons on the Palm Isles; chalets, snowmen and an ice rink in Frost Valley;
+lantern-strung houses and lamplit squares in Lantern Town; stone houses, lava rocks
+and hot springs on Ember Ridge; cherry trees, teahouses and koi in Blossom Valley;
+turrets, a keep and a hedge maze on Castle Hill. Every piece is a toy seen from above in
 the tray's own hand (offset shadow, a lit and a shaded half, outlines at a third
 of the ink), so a barn and a tower sit on the same lawn without either looking
 pasted in. A market stall drawn as a pitched canopy in four triangles read as a
-bow tie at board size, and is a striped awning instead.
+bow tie at board size, and is a striped awning instead. A few are side-on for the
+same reason — from above a lighthouse is a dartboard and a mesa a cushion — and
+nothing is dark grey with a pale ridge, which at 8×8 reads as tarmac. Printed
+scenery follows the region too (`sceneryKind`): cacti and mesas in the canyon,
+palms and lagoons on the isles, snowy pines and ice in the frost. Only wild things,
+never a building, and the mountains draw exactly as they did.
+
+**Each region brings its own world** (`LOOKS` in `theme.ts`, drawn by `Scenery`).
+A region used to change nothing on screen but the header plate, so from level 1 to
+the last the board sat under the same sky. Now a region sets the sky's two colours,
+a sun or a moon, the three hills (or a sea on the horizon), a skyline on the far
+ridge — windmills, a church spire, market gables, a many-arched bridge, towers,
+snowy peaks, a sea of cloud, a lighthouse, orchard rows, mesas, islands, lanterns
+strung between poles, a volcano, a pagoda, a castle — and the weather: clouds,
+snow, falling leaves, petals, rising embers or stars. The skyline is side-on and in
+the haze, because it is far away; the board is the one thing close and seen from
+above.
+
+The parts are picked for where they show. On a phone the board fills the width and
+hides most of the ridge, so what the eye meets in play is the sky above the board,
+the hills under the tools — and the tray and lawn, which a region sets as well
+(`Look.wood`, `Look.lawn`; on the board, the map's fields and the home screen's
+diorama): a blue-painted tray at the harbour, birch in the snow, red lacquer under
+the lanterns, charred wood on the volcano, stone at the castle. **The lawn only
+moves along the greens** — drier in the canyon, cooler in the frost, lusher on the
+isles — because it is the ground the ✕ and its green shadow, the road and the works
+tape were all tuned against; sand and snow go in the hills instead, and `npm test`
+holds every lawn to green-before-red-or-blue. The home screen wears the region the
+player has got to, which is where the trip shows; the map, the splash and the
+tutorial keep the classic sky, because their titles sit straight on it.
+
+Weather is flat views on native-driver loops — a dozen falling rounded rectangles,
+not SVG — and `Scenery` is memoised on its props, since the game screen re-renders
+on every step of road and the sky has no reason to go with it.
 
 **The hearts become the stars.** The three heart slots in the HUD are the score:
 on a win the hearts still standing turn into stars one at a time, each with its
@@ -562,7 +612,8 @@ own note a step higher (`sound.star`). Stars are recorded per level as a best
 nothing in play reads them. What they do open is **the garage**
 (`src/game/garage.ts`, reached by tapping the star count on the home screen):
 paint jobs for the convoy at star thresholds, from the free rainbow to a gold
-convoy at 360 of the ladder's 450. Stars are never spent; a threshold opens a
+convoy at 360 — the first road trip's crown — and on to a royal procession at
+1480 of the ladder's 1800. Stars are never spent; a threshold opens a
 fleet for good, and a win that crosses one says so under its title. A number
 with nowhere to go is a number players stop reading — this gives replaying a
 board for a cleaner win something to show for it, on the thing they watch after
@@ -575,9 +626,13 @@ re-centre the stage and jog the board at the exact moment the player is looking
 at it. Only the confetti is an overlay; it loops, since a single burst ends in a
 bare screen and reads as the celebration breaking rather than finishing.
 
-**The level list is a road trip** (`LevelsScreen`): each grid size is a region
-with its own name and colour (`REGIONS` in `theme.ts`), and the levels are stops
-along one serpentine road through it, opening scrolled to wherever the car is.
+**The level list is a road trip** (`LevelsScreen`): each band is a region with its
+own name, colour, lawn and tray (`REGIONS`, `LOOKS` in `theme.ts`), and the levels
+are stops along one serpentine road through it, opening scrolled to wherever the
+car is. Six hundred stops are too many to draw at once, so the map is a `FlatList`
+of regions that draws only those near the screen; a region's height is a sum of
+fixed parts (the sign has a fixed height for exactly this), so the list can open on
+the car's region without drawing everything above it.
 
 **The map keeps the towns the player built.** Each cleared stop puts a piece of
 its region's town on the lawn — beside the road on the way to the next stop, or
@@ -764,10 +819,11 @@ deleted.
 
 ## The ladder
 
-150 levels in seven bands (`BANDS` in `levels.ts`): 4×4 (1–10), 5×5 (11–25),
-6×6 (26–45), 7×7 (46–75), 8×8 (76–120) — then two more 8×8 bands that change the
-game instead of the board, Mountain Pass (121–135) and Cloud Summit (136–150); see
-"The mountains". The first three levels of each band get one bonus revealed
+600 levels in sixteen bands (`BANDS` in `levels.ts`), a region each. The first road
+trip: 4×4 (1–10), 5×5 (11–25), 6×6 (26–45), 7×7 (46–75), 8×8 (76–120) — then two
+more 8×8 bands that change the game instead of the board, Mountain Pass (121–135)
+and Cloud Summit (136–150); see "The mountains". The second road trip (151–600) is
+nine regions of fifty; see "The second road trip". The first three levels of each band get one bonus revealed
 piece — that is difficulty, not correctness, since both gates have already passed
 by then. A band, not a size, is what a region is: two bands can share a size, so
 the map, the header plate and the town all read `bandFor(level).region`.
@@ -819,11 +875,25 @@ else in the game shows an ad.
   in `app.json`.
 - **Consent before the SDK starts** (`initAds`, after the splash): Google's UMP
   form where the law wants one, and no ad requests until it allows them.
+- **Then Apple's tracking prompt**, on iOS (`askToTrack`,
+  `expo-tracking-transparency`): after Google's form, before any request. It
+  waits for the app to be active, because iOS silently answers "no" to a prompt
+  asked any earlier, and App Review rejects a build whose prompt it never saw.
+  The prompt's text lives in that plugin's options in `app.json`, and nowhere
+  else.
 - **And it can be changed.** Where the law gives the player a way back to their
   answer, Google says so (`privacyOptionsRequired`) and Settings grows a
   **Privacy options** row that reopens the form (`showPrivacyOptions`). A new
   answer that forbids ads counts the SDK as stopped, so the next video asks
   again and finds nothing to show.
+- **The privacy policy and support page live outside this repo**, on the
+  developer site: `/var/www/vhosts/mithatck.com/httpdocs/apps/connectroads/`
+  (`privacy-policy.html`, and `index.html` — the store's support URL), served at
+  `https://mithatck.com/apps/connectroads/`. Settings links to the policy
+  (`PRIVACY_POLICY_URL`), since App Review wants it reachable in the app too. The
+  policy describes what the app actually does — no accounts, no analytics,
+  progress only on the device, AdMob the one thing that goes online — so a change
+  to any of that means an edit there as well.
 - **Every ad is rated PG at most** (`maxAdContentRating`, set before the SDK
   starts): the game is rated for everyone, and the videos it plays must be too.
 - **`app.json` carries the app ids twice.** The Expo plugin reads them from its
@@ -839,7 +909,8 @@ else in the game shows an ad.
 
 The ladder grew the board from 4×4 to 8×8 and then stopped — a ninth size would
 shrink cells past what a thumb can hit, and a rectangle would touch every
-`size` in the code. So the last two bands keep the board and change the game.
+`size` in the code. So the bands after the classic five keep the board and change
+the game — Mountain Pass and Cloud Summit first, the whole second road trip after.
 
 - **Scenery** (Mountain Pass, and Cloud Summit too): squares printed as rocks,
   pines or a lake (`Puzzle.scenery`), off the road by construction. They are
@@ -872,6 +943,45 @@ as two optional codec fields, left off every classic line — which is what let 
 two bands be baked with `npm run levels:build -- 121 136` and every line of 1–120
 come through byte for byte. Each band gets a twist lesson at its foot
 (`Technique` `kind: "twist"`), and no daily ever carries either twist.
+
+## The second road trip
+
+At 150 the ladder had shown everything it has: every rule, both twists, the
+biggest board. Levels 151–600 are nine more regions of fifty, and none of them adds
+a rule or a size — each is scenery and fog **in a new measure**, one region to a
+measure, climbing again from a 6×6:
+
+| Levels | Region | Board | Twist | Cap |
+|---|---|---|---|---|
+| 151–200 | Harbour Bay | 6×6 | fog 2 | T4 |
+| 201–250 | Orchard Hills | 7×7 | scenery 3 | T4 |
+| 251–300 | Sunset Canyon | 7×7 | scenery 4, fog 2 | T4 |
+| 301–350 | Palm Isles | 8×8 | scenery 8, fog 2 | T4 |
+| 351–400 | Frost Valley | 8×8 | scenery 6 | T5 |
+| 401–450 | Lantern Town | 8×8 | fog 3 | T4 |
+| 451–500 | Ember Ridge | 8×8 | none | T5 |
+| 501–550 | Blossom Valley | 8×8 | fog 4 | T4 |
+| 551–600 | Castle Hill | 8×8 | scenery 3, fog 4 | T4 |
+
+- **It starts small on purpose.** After thirty 8×8 mountain boards a player has
+  earned a quick one, and two fogged lines on a 6×6 hide a third of an axis — a
+  sharper puzzle than the size suggests. The size is back at 8×8 by 301 and stays.
+- **A band can name its own cap** (`Band.cap`). A twisted band asks for no what-if
+  unless it says so, as the mountains never did. Frost Valley does: its scenery
+  hands squares over and a what-if asks the player to earn one, which pull in
+  different directions rather than piling up. Fog can't carry one anyway — each
+  line goes under only while the board still falls to T4, so a fogged board's clues
+  never need more. Ember Ridge is the classic game at its hardest: no twist, T5.
+- **No new lessons.** Every rule and twist here was taught by level 136, so
+  `techniqueDue` has nothing to add, and each technique's first board is still
+  where its lesson says.
+- **Baked band by band** with 1–150 copied through byte for byte
+  (`npm run levels:build -- 151 201 251 301 351 401 451 501 551`, ~7 min). On that
+  bake T4 carries most of every band, with T5 in the hard end of Frost Valley (9 of
+  50) and Ember Ridge (16 of 50).
+- **Each region is its own world** — sky, skyline, weather, tray, lawn, town and
+  printed scenery (see Rendering) — and `npm test` holds the bands to tiling the
+  ladder, to 8×8 at most, and to one region each with a sign colour of its own.
 
 ## The daily road
 
@@ -922,7 +1032,7 @@ npm run art:build     re-draw the icon, adaptive icon, splash and favicon
 npx expo export --platform android   bundle check
 ```
 
-`npm test` asserts, for every one of the 150 shipped boards: clues match the
+`npm test` asserts, for every one of the 600 shipped boards: clues match the
 path, **no clue is 0**, the path is a genuine self-avoiding walk, pieces face their neighbours,
 only the terminals leave the grid, the solver finds **exactly one** solution and
 it is the intended one, the bank round-trips through the codec, and the play rules
@@ -945,7 +1055,9 @@ follows a fogged count, and once the road is all claimed has crossed out every
 other square. The
 mountain bands carry exactly their twists and the classic ones none; scenery only
 ever stands off the road; fog is on one axis, two lines or more, and a fogged sign
-never turns green or red. It
+never turns green or red. The bands tile the ladder with none past 8×8, each band
+is a region of its own with its own sign colour and a complete look, and every
+region's lawn stays green. It
 also plays the tutorial's lessons by their script (see Onboarding), sweeping as
 the game does, and fails a step the board has already done for the player.
 
@@ -961,5 +1073,5 @@ And the assertions this ladder exists for:
   unsolvable at _n−1_, so a bug that quietly folded one tier's reasoning into
   another would show up as a flat ladder rather than passing silently.
 
-~129k checks, about six seconds — most of it proving each of the 364 daily
-boards has exactly one route.
+~419k checks, about fifteen seconds — most of it proving that each of the 600
+levels and 364 daily boards has exactly one route.

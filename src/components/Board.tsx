@@ -69,7 +69,7 @@ import {
   type Piece,
   type Puzzle,
 } from "../game/types";
-import { font, radius, theme } from "../theme";
+import { font, lookFor, radius, theme } from "../theme";
 import { CarRide } from "./CarRide";
 import { Cell } from "./Cell";
 import { ROAD_SPAN, ROAD_W, roadRun } from "./RoadPiece";
@@ -147,6 +147,9 @@ export function Board(props: BoardProps) {
   const pointed = (column: boolean, index: number) =>
     !!pointLine && pointLine.column === column && pointLine.index === index;
   const n = puzzle.size;
+  // Whose tray and lawn this is: the region's, or the one its size would be.
+  const region = props.region ?? regionForSize(n);
+  const look = lookFor(region);
 
   const gutter = Math.max(24, Math.min(36, width * 0.088));
   // The wooden tray round the lawn. Thick enough to read as wood and to carry
@@ -326,7 +329,7 @@ export function Board(props: BoardProps) {
           town={town}
           delay={town ? 350 + (r + c) * 70 : 0}
           seed={puzzle.seed}
-          region={props.region ?? regionForSize(n)}
+          region={region}
           scenery={isScenery(puzzle, r, c)}
         />,
       );
@@ -373,13 +376,24 @@ export function Board(props: BoardProps) {
           ))}
         </View>
 
-        <View style={[styles.tray, { padding: frame, borderRadius: frame + 6 }]}>
+        <View
+          style={[
+            styles.tray,
+            {
+              padding: frame,
+              borderRadius: frame + 6,
+              backgroundColor: look.wood[0],
+              borderTopColor: look.wood[1],
+              borderBottomColor: look.wood[2],
+            },
+          ]}
+        >
           <View
             testID="board-grid"
-            style={[styles.lawn, { width: grid, height: grid, borderRadius: 4 }]}
+            style={[styles.lawn, { width: grid, height: grid, borderRadius: 4, backgroundColor: look.lawn[0] }]}
             {...responder.panHandlers}
           >
-            <Lawn n={n} cell={cell} />
+            <Lawn n={n} cell={cell} colours={look.lawn} />
             {/* Under the cells, so the road's own tarmac and kerbs stay on top
                 of it and the light reads as coming from around the road rather
                 than painted over it. */}
@@ -468,12 +482,23 @@ function cellAt(x: number, y: number, cell: number, n: number): Coord | null {
   return { r, c };
 }
 
+const LAWN = [theme.lawnA, theme.lawnB, theme.lawnBlade] as const;
+
 /**
  * The mown lawn under every square, in one layer: two greens in a checker, so
  * the grid reads without a single grid line, and a scatter of darker clumps so
  * it reads as grass rather than as a chessboard.
  */
-export const Lawn = React.memo(function Lawn({ n, cell }: { n: number; cell: number }) {
+export const Lawn = React.memo(function Lawn({
+  n,
+  cell,
+  colours = LAWN,
+}: {
+  n: number;
+  cell: number;
+  /** The two checker greens and the clumps — a region's own lawn (`Look.lawn`). */
+  colours?: readonly [string, string, string];
+}) {
   const tiles: React.ReactNode[] = [];
   const clumps: React.ReactNode[] = [];
   const b = Math.max(2, cell * 0.045);
@@ -486,7 +511,7 @@ export const Lawn = React.memo(function Lawn({ n, cell }: { n: number; cell: num
           y={r * cell}
           width={cell}
           height={cell}
-          fill={(r + c) % 2 === 0 ? theme.lawnA : theme.lawnB}
+          fill={(r + c) % 2 === 0 ? colours[0] : colours[1]}
         />,
       );
       // Two soft clumps a square. They are shapeless on purpose: drawn blades
@@ -498,7 +523,7 @@ export const Lawn = React.memo(function Lawn({ n, cell }: { n: number; cell: num
         const x = c * cell + cell * (0.15 + 0.7 * u);
         const y = r * cell + cell * (0.2 + 0.6 * v);
         clumps.push(
-          <Ellipse key={`g${r}:${c}:${k}`} cx={x} cy={y} rx={b * 1.1} ry={b * 0.6} fill={theme.lawnBlade} />,
+          <Ellipse key={`g${r}:${c}:${k}`} cx={x} cy={y} rx={b * 1.1} ry={b * 0.6} fill={colours[2]} />,
         );
       }
     }

@@ -62,6 +62,8 @@ export function GameScreen({
   // Leave room for the header, banner and tools on a short phone.
   const boardWidth = Math.min(width - 20, 470, height - 300);
   const daily = isDaily(game.level);
+  // A daily isn't on the road trip: it is drawn in the world its size would be.
+  const region = daily ? regionForSize(game.puzzle.size) : bandFor(game.level).region;
   // A daily wears the accent rather than a region's colour: it is not a stop on
   // the road trip, and the plate says which kind of board this is at a glance.
   const plate = daily
@@ -119,7 +121,7 @@ export function GameScreen({
 
   return (
     <View style={styles.page}>
-      <Scenery horizon={0.8} sun={false} decor={false} />
+      <Scenery horizon={0.8} sun={false} region={region} />
 
       <View style={styles.header}>
         <IconButton onPress={onExit}>
@@ -183,8 +185,7 @@ export function GameScreen({
             phase={game.phase}
             width={boardWidth}
             paints={fleetById(game.progress.fleet).paints}
-            // A daily isn't on the road trip: it builds the town its size would.
-            region={daily ? regionForSize(game.puzzle.size) : bandFor(game.level).region}
+            region={region}
             pointAt={game.tip?.point}
             pointLine={game.tip?.line}
             wrong={game.wrong}

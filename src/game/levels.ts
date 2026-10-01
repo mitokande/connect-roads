@@ -8,21 +8,45 @@ import { generatePuzzle } from "./generator";
 import { LEVEL_BANK } from "./levelData";
 import type { Puzzle } from "./types";
 
-export const LEVEL_COUNT = 150;
+export const LEVEL_COUNT = 600;
 
 /** The regions of the road trip, in the order it drives through them. */
-export type RegionId = "meadow" | "village" | "market" | "riverside" | "metropolis" | "pass" | "summit";
+export type RegionId =
+  | "meadow"
+  | "village"
+  | "market"
+  | "riverside"
+  | "metropolis"
+  | "pass"
+  | "summit"
+  | "harbour"
+  | "orchard"
+  | "canyon"
+  | "isles"
+  | "frost"
+  | "lantern"
+  | "ember"
+  | "blossom"
+  | "castle";
 
 /**
  * A stretch of the ladder: where it starts, the board size, the region it is
- * drawn as — and, for the mountains, the twists every board in it carries.
+ * drawn as — and, past the classic five, the twists every board in it carries.
  *
- * The first five grow the board; the last two keep it at 8×8 and change the
- * *game* instead, because a ninth size would shrink the cells past what a thumb
- * can hit. **Mountain Pass** prints scenery — rocks, pines, lakes the road has to
- * find its way round — and **Cloud Summit** adds fog over some of the counts.
- * Scenery gives facts away and fog takes some back, so the two together are a
- * new texture of puzzle rather than just a harder one; see `generator.ts`.
+ * The first five grow the board; everything after keeps it at 8×8 or below and
+ * changes the *game* instead, because a ninth size would shrink the cells past
+ * what a thumb can hit. **Mountain Pass** prints scenery — rocks, pines, lakes the
+ * road has to find its way round — and **Cloud Summit** adds fog over some of the
+ * counts. Scenery gives facts away and fog takes some back, so the two together
+ * are a new texture of puzzle rather than just a harder one; see `generator.ts`.
+ *
+ * **The second road trip** (151–600) is those two twists in new measures, one
+ * region to each, climbing again from a 6×6: a board size, how much scenery, how
+ * many counts under fog, and whether a what-if may be asked. Starting it small
+ * is deliberate — after thirty 8×8 mountain boards a player has earned a quick
+ * one, and fog on a 6×6 hides a third of a grid's worth of counts, which is a
+ * sharper puzzle than the size suggests. From there it climbs to the finale:
+ * half of one axis under fog, with a castle's moat and rocks printed round it.
  */
 export type Band = {
   first: number;
@@ -32,6 +56,11 @@ export type Band = {
   scenery?: number;
   /** Lines under fog on every board (0, or at least 2). */
   fog?: number;
+  /**
+   * The hardest rule a board here may ask for, where it isn't the default (see
+   * {@link tierCapForLevel}): a twisted band that may *also* ask for a what-if.
+   */
+  cap?: Tier;
 };
 
 export const BANDS: Band[] = [
@@ -42,6 +71,16 @@ export const BANDS: Band[] = [
   { first: 76, size: 8, region: "metropolis" },
   { first: 121, size: 8, region: "pass", scenery: 5 },
   { first: 136, size: 8, region: "summit", scenery: 4, fog: 2 },
+  // The second road trip.
+  { first: 151, size: 6, region: "harbour", fog: 2 },
+  { first: 201, size: 7, region: "orchard", scenery: 3 },
+  { first: 251, size: 7, region: "canyon", scenery: 4, fog: 2 },
+  { first: 301, size: 8, region: "isles", scenery: 8, fog: 2 },
+  { first: 351, size: 8, region: "frost", scenery: 6, cap: 5 },
+  { first: 401, size: 8, region: "lantern", fog: 3 },
+  { first: 451, size: 8, region: "ember" },
+  { first: 501, size: 8, region: "blossom", fog: 4 },
+  { first: 551, size: 8, region: "castle", scenery: 3, fog: 4 },
 ];
 
 /** The band a level belongs to. */
@@ -82,7 +121,10 @@ export const HARD_TIER_FROM = 96;
  */
 export const tierCapForLevel = (level: number): Tier => {
   const band = bandFor(level);
-  // The mountains' difficulty is their twists; they never also ask for a what-if.
+  if (band.cap) return band.cap;
+  // A twisted band's difficulty is its twist; it asks for a what-if as well only
+  // where it says so. (Fog can't anyway: each line goes under only while the
+  // board still falls to T4, so a fogged board's clues never need more.)
   if (band.scenery || band.fog) return 4;
   return level >= HARD_TIER_FROM ? 5 : 4;
 };

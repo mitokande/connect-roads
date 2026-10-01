@@ -53,8 +53,13 @@
         {
           "androidAppId": "ca-app-pub-4604843322018757~3769896564",
           "iosAppId": "ca-app-pub-4604843322018757~7537665465",
-          "userTrackingUsageDescription": "This lets us show you ads that are more relevant to you. Connect Roads works the same either way.",
           "skAdNetworkItems": ["cstr6suwn9.skadnetwork"]
+        }
+      ],
+      [
+        "expo-tracking-transparency",
+        {
+          "userTrackingPermission": "This lets us show you ads that are more relevant to you. Connect Roads works the same either way."
         }
       ]
     ],

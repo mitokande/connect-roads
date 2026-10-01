@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
-import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import { Linking, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 
 import { privacyOptionsRequired, showPrivacyOptions } from "../ads";
 import { haptics } from "../haptics";
@@ -8,6 +8,12 @@ import { sound } from "../sound";
 import type { Progress } from "../state/useGame";
 import { font, overlayLift, radius, shadow, theme } from "../theme";
 import { Button } from "./Button";
+
+/**
+ * Hosted with the support page beside it, which is also the store's support URL.
+ * App Review wants the policy reachable from inside the app, not only the listing.
+ */
+const PRIVACY_POLICY_URL = "https://mithatck.com/apps/connectroads/privacy-policy.html";
 
 export function SettingsOverlay({
   progress,
@@ -87,6 +93,17 @@ export function SettingsOverlay({
         >
           <Row icon="school" label="How to play">
             <Ionicons name="play-circle" size={30} color={theme.accent} />
+          </Row>
+        </Pressable>
+
+        <Pressable
+          onPress={() => {
+            sound.press();
+            Linking.openURL(PRIVACY_POLICY_URL).catch(() => {});
+          }}
+        >
+          <Row icon="document-text" label="Privacy policy">
+            <Ionicons name="open-outline" size={26} color={theme.accent} />
           </Row>
         </Pressable>
 

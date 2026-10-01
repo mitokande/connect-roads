@@ -63,8 +63,10 @@ import {
 } from "./generator";
 import { LEVEL_BANK } from "./levelData";
 import {
+  BANDS,
   bandFor,
   bandIndex,
+  bandLevels,
   GRACE_LEVELS,
   HARD_TIER_FROM,
   LEVEL_COUNT,
@@ -92,6 +94,7 @@ import {
 } from "./daily";
 import { DAILY_BANK } from "./dailyData";
 import { FLEETS, fleetById, isUnlocked, newlyUnlocked, totalStars } from "./garage";
+import { LOOKS, REGIONS } from "../theme";
 import { deductionTip, routeTip } from "./hint";
 import { restoreBoard, saveBoard, worthKeeping, type SavedBoard } from "./save";
 import { countSolutions } from "./solver";
@@ -788,6 +791,43 @@ console.log("Connect Roads — core tests\n");
   const seeds = new Set<number>();
   for (let l = 1; l <= LEVEL_COUNT; l++) seeds.add(levelSeed(l));
   check(seeds.size === LEVEL_COUNT, "every level draws its own seed");
+
+  // The bands tile the ladder: from level 1, one after another, to the last.
+  check(BANDS[0].first === 1, "the first band starts at level 1");
+  check(
+    BANDS.every((b, i) => i === 0 || BANDS[i - 1].first < b.first),
+    "the bands run in order, none empty",
+  );
+  check(
+    BANDS.reduce((n, b) => n + bandLevels(b).length, 0) === LEVEL_COUNT,
+    `the bands hold exactly the ${LEVEL_COUNT} levels`,
+  );
+  // A ninth size would shrink the cells past what a thumb can hit, which is why
+  // everything past the classic five changes the game instead of the board.
+  check(BANDS.every((b) => b.size >= 4 && b.size <= 8), "no band is smaller than 4×4 or bigger than 8×8");
+  check(BANDS.every((b) => !b.fog || b.fog >= 2), "a band's fog hides two lines or none");
+  // Each band is its own region: a sign on the map, a world on screen.
+  check(new Set(BANDS.map((b) => b.region)).size === BANDS.length, "every band is a region of its own");
+  check(BANDS.every((b) => REGIONS[b.region] && LOOKS[b.region]), "every region has a name, a colour and a look");
+  check(
+    new Set(BANDS.map((b) => REGIONS[b.region].color)).size === BANDS.length,
+    "no two regions share a sign colour",
+  );
+  // The lawn is the ground the whole board was tuned against — the chalk ✕ and
+  // its green shadow, the dark road, the works tape — so a region may move it
+  // along the greens but never off them.
+  const hex = /^#[0-9A-Fa-f]{6}$/;
+  for (const band of BANDS) {
+    const look = LOOKS[band.region];
+    const colours = [look.skyTop, look.skyLow, look.hillFar, look.hillMid, look.hillNear, look.haze, look.cloud, ...look.lawn, ...look.wood];
+    check(colours.every((c) => hex.test(c)), `${band.region}: every colour in its look is a colour`);
+    const green = look.lawn.every((c) => {
+      const v = parseInt(c.slice(1), 16);
+      const [r, g, b] = [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+      return g > r && g > b;
+    });
+    check(green, `${band.region}: its lawn is still a lawn (green before red or blue)`);
+  }
 }
 
 // --- 3b. The baked bank ------------------------------------------------------

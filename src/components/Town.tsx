@@ -13,6 +13,14 @@
 // stalls, then to terraces along the canals, then to rooftops — the road trip is
 // a trip because the scenery changes, and the board size already says where the
 // player is.
+//
+// The second road trip carries on in the same hand: beach huts and a lighthouse
+// round the harbour, fruit trees and pumpkin patches in the orchards, adobe and
+// cactus in the canyon, palms and thatch on the isles, snowed-on chalets in the
+// valley, lanterns strung over the night town, dark stone by the volcano,
+// blossom and teahouses, and turrets on Castle Hill. The mountains' printed
+// scenery changes with them (`sceneryKind`), so a canyon board opens on mesas
+// and cacti rather than on alpine pines.
 
 import React, { useEffect, useRef } from "react";
 import { Animated } from "react-native";
@@ -42,7 +50,38 @@ export type TownKind =
   | "pines"
   | "rocks"
   | "lake"
-  | "cabin";
+  | "cabin"
+  | "hut"
+  | "lighthouse"
+  | "boat"
+  | "umbrella"
+  | "orchard"
+  | "pumpkins"
+  | "beehives"
+  | "adobe"
+  | "cactus"
+  | "mesa"
+  | "oasis"
+  | "palms"
+  | "tiki"
+  | "lagoon"
+  | "chalet"
+  | "snowpines"
+  | "snowman"
+  | "rink"
+  | "ice"
+  | "snowrocks"
+  | "lit"
+  | "lamps"
+  | "stonehouse"
+  | "lavarock"
+  | "hotspring"
+  | "cherry"
+  | "teahouse"
+  | "koi"
+  | "turret"
+  | "keep"
+  | "maze";
 
 /**
  * What each region builds. A kind listed twice is twice as likely, which is how
@@ -57,6 +96,15 @@ export const TOWNS: Record<RegionId, TownKind[]> = {
   metropolis: ["tower", "tower", "tower", "tower", "helipad", "fountain", "trees", "terrace"],
   pass: ["cabin", "cabin", "pines", "pines", "pines", "rocks", "lake"],
   summit: ["cabin", "pines", "pines", "rocks", "rocks", "lake"],
+  harbour: ["hut", "hut", "lighthouse", "boat", "boat", "umbrella", "trees"],
+  orchard: ["orchard", "orchard", "orchard", "pumpkins", "beehives", "barn", "hay"],
+  canyon: ["adobe", "adobe", "cactus", "cactus", "mesa", "oasis"],
+  isles: ["palms", "palms", "tiki", "tiki", "lagoon", "boat", "umbrella"],
+  frost: ["chalet", "chalet", "snowpines", "snowpines", "snowman", "rink"],
+  lantern: ["lit", "lit", "lit", "lamps", "lamps", "stall", "fountain"],
+  ember: ["stonehouse", "stonehouse", "lavarock", "lavarock", "hotspring", "pines"],
+  blossom: ["cherry", "cherry", "cherry", "teahouse", "teahouse", "koi", "garden"],
+  castle: ["turret", "turret", "keep", "maze", "house", "trees", "fountain"],
 };
 
 /** The piece a region builds for a hash in [0, 1). */
@@ -66,11 +114,26 @@ export function townKind(region: RegionId, h: number): TownKind {
 }
 
 /**
- * What a square of **scenery** is — the mountains' printed empties. Only the
- * wild things: rocks, pines, a lake. A cabin is something the player's road
- * brings, so it is built on a won board and never printed on a fresh one.
+ * The wild things each region prints as scenery, commonest first. A region not
+ * listed prints the mountains' own rocks, pines and lakes.
  */
-export const sceneryKind = (h: number): TownKind => (h < 0.45 ? "rocks" : h < 0.85 ? "pines" : "lake");
+const WILD: Partial<Record<RegionId, [TownKind, TownKind, TownKind]>> = {
+  orchard: ["rocks", "orchard", "pond"],
+  canyon: ["mesa", "cactus", "rocks"],
+  isles: ["rocks", "palms", "lagoon"],
+  frost: ["snowrocks", "snowpines", "ice"],
+};
+
+/**
+ * What a square of **scenery** is — the printed empties. Only the wild things:
+ * rocks, pines, a lake, and each region's own in their place. A cabin is
+ * something the player's road brings, so it is built on a won board and never
+ * printed on a fresh one; the same goes for every building.
+ */
+export function sceneryKind(region: RegionId | undefined, h: number): TownKind {
+  const [common, middling, rare] = (region && WILD[region]) || ["rocks", "pines", "lake"];
+  return h < 0.45 ? common : h < 0.85 ? middling : rare;
+}
 
 /** A tiny deterministic hash, so the same won board always builds the same town. */
 export function townHash(r: number, c: number, seed: number) {
@@ -174,6 +237,68 @@ function Piece({ kind, s, h }: { kind: TownKind; s: number; h: number }) {
       return <Lake s={s} />;
     case "cabin":
       return <Cabin s={s} h={h} />;
+    case "hut":
+      return <Huts s={s} h={h} />;
+    case "lighthouse":
+      return <Lighthouse s={s} h={h} />;
+    case "boat":
+      return <Boat s={s} h={h} />;
+    case "umbrella":
+      return <Umbrellas s={s} h={h} />;
+    case "orchard":
+      return <Orchard s={s} h={h} />;
+    case "pumpkins":
+      return <Pumpkins s={s} h={h} />;
+    case "beehives":
+      return <Beehives s={s} h={h} />;
+    case "adobe":
+      return <Adobe s={s} h={h} />;
+    case "cactus":
+      return <Cactus s={s} h={h} />;
+    case "mesa":
+      return <Mesa s={s} h={h} />;
+    case "oasis":
+      return <Oasis s={s} />;
+    case "palms":
+      return <Palms s={s} h={h} />;
+    case "tiki":
+      return <Tiki s={s} h={h} />;
+    case "lagoon":
+      return <Lagoon s={s} />;
+    case "chalet":
+      return <Chalet s={s} h={h} />;
+    case "snowpines":
+      return <SnowPines s={s} h={h} />;
+    case "snowman":
+      return <Snowman s={s} />;
+    case "rink":
+      return <Rink s={s} />;
+    case "ice":
+      return <Ice s={s} />;
+    case "snowrocks":
+      return <SnowRocks s={s} h={h} />;
+    case "lit":
+      return <Lit s={s} h={h} />;
+    case "lamps":
+      return <Lamps s={s} h={h} />;
+    case "stonehouse":
+      return <StoneHouse s={s} h={h} />;
+    case "lavarock":
+      return <LavaRocks s={s} h={h} />;
+    case "hotspring":
+      return <HotSpring s={s} />;
+    case "cherry":
+      return <Cherry s={s} h={h} />;
+    case "teahouse":
+      return <Teahouse s={s} h={h} />;
+    case "koi":
+      return <Koi s={s} />;
+    case "turret":
+      return <Turret s={s} h={h} />;
+    case "keep":
+      return <Keep s={s} h={h} />;
+    case "maze":
+      return <Maze s={s} h={h} />;
   }
 }
 
@@ -673,6 +798,919 @@ function Cabin({ s, h }: { s: number; h: number }) {
       <Shadow x={x} y={y} w={w} d={d} s={s} />
       <Roof x={x} y={y} w={w} d={d} s={s} fill={pick(["#8B5A3C", "#7A4E33", "#9C6645"], h)} across={h > 0.5} />
       <Rect x={x + w * 0.66} y={y + d * 0.1} width={s * 0.1} height={s * 0.1} rx={s * 0.02} fill="#A9A399" />
+    </G>
+  );
+}
+
+// --- the second road trip ---------------------------------------------------------
+
+const SAND = "#F0DBA0";
+const SAND_EDGE = "#DDC282";
+const PASTELS = ["#FF8F8F", "#7FCBF5", "#8FDDB0", "#C9A6F5", "#FFB27A"];
+
+/** A patch of sand under a seaside piece, so it reads as beach on any lawn. */
+function Sand({ s }: { s: number }) {
+  return (
+    <Rect
+      x={s * 0.08}
+      y={s * 0.08}
+      width={s * 0.84}
+      height={s * 0.84}
+      rx={s * 0.16}
+      fill={SAND}
+      stroke={SAND_EDGE}
+      strokeWidth={Math.max(1, s * 0.02)}
+    />
+  );
+}
+
+/**
+ * A leaf from (x, y) out to `r` along angle `a`, `w` wide either side of its
+ * spine: a palm frond, a fish's body.
+ */
+function leaf(x: number, y: number, r: number, a: number, w: number) {
+  const tx = x + Math.cos(a) * r;
+  const ty = y + Math.sin(a) * r;
+  const mx = (x + tx) / 2;
+  const my = (y + ty) / 2;
+  const nx = -Math.sin(a) * w;
+  const ny = Math.cos(a) * w;
+  return `M ${x},${y} Q ${mx + nx},${my + ny} ${tx},${ty} Q ${mx - nx},${my - ny} ${x},${y} Z`;
+}
+
+// --- Harbour Bay -------------------------------------------------------------------
+
+/** Beach huts in a row on the sand, each its own colour, a deck out front. */
+function Huts({ s, h }: { s: number; h: number }) {
+  const n = h > 0.5 ? 3 : 2;
+  const w = s * (n === 3 ? 0.19 : 0.24);
+  const d = s * 0.36;
+  const gap = s * 0.05;
+  const x0 = (s - (n * w + (n - 1) * gap)) / 2;
+  const y = s * 0.2;
+  return (
+    <G>
+      <Sand s={s} />
+      {Array.from({ length: n }, (_, i) => {
+        const x = x0 + i * (w + gap);
+        return (
+          <G key={i}>
+            <Shadow x={x} y={y} w={w} d={d} s={s} />
+            <Roof x={x} y={y} w={w} d={d} s={s} fill={PASTELS[(Math.floor(h * 5) + i * 2) % PASTELS.length]} across={false} />
+            <Rect x={x + w * 0.12} y={y + d + s * 0.05} width={w * 0.76} height={s * 0.11} rx={s * 0.02} fill={theme.trunk} opacity={0.75} />
+          </G>
+        );
+      })}
+    </G>
+  );
+}
+
+/**
+ * A lighthouse on its rock, seen side-on like a toy stood in the tray — from
+ * straight above it was only red and white rings, and read as a dartboard.
+ */
+function Lighthouse({ s, h }: { s: number; h: number }) {
+  const c = s / 2;
+  const top = s * 0.3;
+  const foot = s * 0.78;
+  // Half the tower's width at height y: it tapers towards the lamp.
+  const half = (y: number) => s * (0.09 + 0.06 * ((y - top) / (foot - top)));
+  const band = (y0: number, y1: number) =>
+    `M ${c - half(y0)},${y0} L ${c + half(y0)},${y0} L ${c + half(y1)},${y1} L ${c - half(y1)},${y1} Z`;
+  const beam = h > 0.5 ? 1 : -1;
+  return (
+    <G>
+      <Path
+        d={`M ${c},${s * 0.21} L ${c + beam * s * 0.46},${s * 0.08} L ${c + beam * s * 0.46},${s * 0.34} Z`}
+        fill="#FFF6C8"
+        opacity={0.6}
+      />
+      <Ellipse cx={c + s * 0.05} cy={s * 0.82} rx={s * 0.34} ry={s * 0.1} fill="#000" opacity={0.16} />
+      <Ellipse cx={c} cy={s * 0.8} rx={s * 0.32} ry={s * 0.11} fill="#A9A399" {...ink(s)} />
+      <Ellipse cx={c - s * 0.1} cy={s * 0.77} rx={s * 0.12} ry={s * 0.04} fill="#C4BEB3" />
+      <Path d={band(top, foot)} fill="#FFFFFF" {...ink(s)} />
+      <Path d={band(s * 0.38, s * 0.48)} fill="#E8483F" />
+      <Path d={band(s * 0.58, s * 0.68)} fill="#E8483F" />
+      <Path d={band(s * 0.48, foot)} fill="#000" opacity={0.06} />
+      <Rect x={c - s * 0.13} y={s * 0.26} width={s * 0.26} height={s * 0.045} rx={s * 0.015} fill="#5B6275" />
+      <Rect x={c - s * 0.075} y={s * 0.16} width={s * 0.15} height={s * 0.1} rx={s * 0.02} fill="#FFF3B0" {...ink(s)} />
+      <Path d={`M ${c - s * 0.1},${s * 0.165} Q ${c},${s * 0.06} ${c + s * 0.1},${s * 0.165} Z`} fill="#E8483F" {...ink(s)} />
+    </G>
+  );
+}
+
+/** A little sailboat on a square of harbour water, its wake behind it. */
+function Boat({ s, h }: { s: number; h: number }) {
+  const dir = h > 0.5 ? 1 : -1;
+  const X = (u: number) => s / 2 + dir * u * s;
+  const y = s * 0.56;
+  const hullAt = (dx: number, dy: number) =>
+    `M ${X(-0.22) + dx},${y - s * 0.08 + dy} L ${X(0.1) + dx},${y - s * 0.08 + dy} ` +
+    `Q ${X(0.3) + dx},${y + dy} ${X(0.1) + dx},${y + s * 0.08 + dy} L ${X(-0.22) + dx},${y + s * 0.08 + dy} Z`;
+  const hull = pick(["#E84A5F", "#FFFFFF", "#2E9CCA", "#FF9F43"], h * 4);
+  return (
+    <G>
+      <Rect x={s * 0.06} y={s * 0.06} width={s * 0.88} height={s * 0.88} rx={s * 0.14} fill="#4AA8D0" />
+      <Rect x={s * 0.1} y={s * 0.1} width={s * 0.8} height={s * 0.8} rx={s * 0.12} fill={theme.pond} />
+      <Path
+        d={`M ${X(-0.24)},${y - s * 0.05} L ${X(-0.38)},${y - s * 0.12} M ${X(-0.24)},${y + s * 0.05} L ${X(-0.38)},${y + s * 0.12}`}
+        stroke="#FFFFFF"
+        strokeOpacity={0.75}
+        strokeWidth={Math.max(1, s * 0.025)}
+        strokeLinecap="round"
+      />
+      <Path d={hullAt(s * 0.03, s * 0.05)} fill="#000" opacity={0.18} />
+      <Path d={hullAt(0, 0)} fill={hull} {...ink(s)} />
+      <Path d={`M ${X(-0.14)},${y - s * 0.02} L ${X(0.1)},${y - s * 0.02} L ${X(0)},${y - s * 0.34} Z`} fill="#FFFFFF" {...ink(s)} />
+      <Circle cx={X(0)} cy={y - s * 0.02} r={s * 0.025} fill={theme.trunk} />
+    </G>
+  );
+}
+
+/** One beach umbrella from above: eight panels, every other one white. */
+function Parasol({ x, y, r, colour }: { x: number; y: number; r: number; colour: string }) {
+  const segs = 8;
+  return (
+    <G>
+      <Circle cx={x + r * 0.3} cy={y + r * 0.35} r={r} fill="#000" opacity={0.16} />
+      {Array.from({ length: segs }, (_, i) => {
+        const a0 = (i / segs) * Math.PI * 2;
+        const a1 = ((i + 1) / segs) * Math.PI * 2;
+        return (
+          <Path
+            key={i}
+            d={`M ${x},${y} L ${x + r * Math.cos(a0)},${y + r * Math.sin(a0)} A ${r} ${r} 0 0 1 ${x + r * Math.cos(a1)},${y + r * Math.sin(a1)} Z`}
+            fill={i % 2 ? "#FFFFFF" : colour}
+          />
+        );
+      })}
+      <Circle cx={x} cy={y} r={r} fill="none" stroke={theme.text} strokeOpacity={0.35} strokeWidth={Math.max(1, r * 0.1)} />
+      <Circle cx={x} cy={y} r={r * 0.12} fill={theme.trunk} />
+    </G>
+  );
+}
+
+/** Two umbrellas and a towel on the sand. */
+function Umbrellas({ s, h }: { s: number; h: number }) {
+  return (
+    <G>
+      <Sand s={s} />
+      <Rect x={s * 0.56} y={s * 0.18} width={s * 0.14} height={s * 0.26} rx={s * 0.02} fill={pick(PASTELS, h)} />
+      <Parasol x={s * 0.34} y={s * 0.36} r={s * 0.17} colour={pick(["#E84A5F", "#2E9CCA", "#27B9A8"], h * 3)} />
+      <Parasol x={s * 0.64} y={s * 0.66} r={s * 0.15} colour={pick(["#FF9F43", "#A77BF3", "#E84A5F"], h * 3)} />
+    </G>
+  );
+}
+
+// --- Orchard Hills -----------------------------------------------------------------
+
+/** A fruit tree: a tree with its crop showing. */
+function FruitTree({ x, y, r, fruit }: { x: number; y: number; r: number; fruit: string }) {
+  return (
+    <G>
+      <Tree x={x} y={y} r={r} />
+      {[
+        [0.38, -0.1],
+        [-0.32, 0.28],
+        [0.2, 0.46],
+        [-0.02, -0.5],
+      ].map(([u, v], i) => (
+        <Circle key={i} cx={x + u * r} cy={y + v * r} r={r * 0.17} fill={fruit} />
+      ))}
+    </G>
+  );
+}
+
+/** Fruit trees planted in rows, all bearing the same crop. */
+function Orchard({ s, h }: { s: number; h: number }) {
+  const fruit = pick(["#E84A3C", "#FF9F43", "#F25C8A"], h * 3);
+  const r = s * 0.15;
+  return (
+    <G>
+      {[
+        [0.3, 0.3],
+        [0.7, 0.3],
+        [0.3, 0.7],
+        [0.7, 0.7],
+      ].map(([x, y], i) => (
+        <FruitTree key={i} x={s * x} y={s * y} r={r} fruit={fruit} />
+      ))}
+    </G>
+  );
+}
+
+function Pumpkin({ x, y, r }: { x: number; y: number; r: number }) {
+  return (
+    <G>
+      <Ellipse cx={x + r * 0.25} cy={y + r * 0.3} rx={r * 1.05} ry={r * 0.9} fill="#000" opacity={0.16} />
+      <Ellipse cx={x} cy={y} rx={r * 1.05} ry={r * 0.88} fill="#F28C28" stroke={theme.text} strokeOpacity={0.3} strokeWidth={Math.max(0.8, r * 0.1)} />
+      <Ellipse cx={x} cy={y} rx={r * 0.5} ry={r * 0.88} fill="none" stroke="#D96F12" strokeWidth={Math.max(0.8, r * 0.12)} />
+      <Ellipse cx={x - r * 0.35} cy={y - r * 0.32} rx={r * 0.24} ry={r * 0.14} fill="#FFFFFF" opacity={0.35} />
+      <Rect x={x - r * 0.1} y={y - r * 1.02} width={r * 0.2} height={r * 0.36} rx={r * 0.06} fill="#4E7A2E" />
+    </G>
+  );
+}
+
+/** A pumpkin patch: tilled ground, a vine wandering across it, the pumpkins. */
+function Pumpkins({ s, h }: { s: number; h: number }) {
+  return (
+    <G>
+      <Rect x={s * 0.12} y={s * 0.12} width={s * 0.76} height={s * 0.76} rx={s * 0.12} fill="#9C6B3F" opacity={0.6} />
+      <Path
+        d={`M ${s * 0.18},${s * 0.74} Q ${s * 0.34},${s * 0.46} ${s * 0.5},${s * 0.56} T ${s * 0.82},${s * 0.3}`}
+        stroke={theme.bush}
+        strokeWidth={Math.max(1, s * 0.03)}
+        fill="none"
+        strokeLinecap="round"
+      />
+      {[
+        [0.24, 0.6],
+        [0.46, 0.52],
+        [0.62, 0.5],
+        [0.78, 0.36],
+      ].map(([x, y], i) => (
+        <Circle key={i} cx={s * x} cy={s * y} r={s * 0.045} fill={theme.bushLight} />
+      ))}
+      <Pumpkin x={s * 0.32} y={s * 0.34} r={s * 0.13} />
+      <Pumpkin x={s * 0.66} y={s * 0.62} r={s * 0.15} />
+      {h > 0.5 ? <Pumpkin x={s * 0.3} y={s * 0.74} r={s * 0.1} /> : null}
+    </G>
+  );
+}
+
+function Hive({ x, y, w, lid, s }: { x: number; y: number; w: number; lid: string; s: number }) {
+  return (
+    <G>
+      <Shadow x={x} y={y} w={w} d={w} s={s} />
+      <Rect x={x} y={y} width={w} height={w} rx={s * 0.03} fill="#E9C893" {...ink(s)} />
+      <Rect x={x + w * 0.14} y={y + w * 0.14} width={w * 0.72} height={w * 0.72} rx={s * 0.02} fill={lid} />
+      <Rect x={x + w * 0.14} y={y + w * 0.5} width={w * 0.72} height={w * 0.36} fill="#000" opacity={0.1} />
+    </G>
+  );
+}
+
+/** A few hive boxes among the flowers. */
+function Beehives({ s, h }: { s: number; h: number }) {
+  const lids = ["#FFFFFF", "#8FDDB0", "#7FCBF5", "#FF8F8F"];
+  const w = s * 0.22;
+  const k = Math.floor(h * lids.length);
+  return (
+    <G>
+      {[
+        [0.7, 0.62],
+        [0.82, 0.8],
+        [0.6, 0.82],
+        [0.16, 0.84],
+        [0.84, 0.16],
+      ].map(([x, y], i) => (
+        <Circle key={i} cx={s * x} cy={s * y} r={s * 0.05} fill={FLOWERS[(i + k) % FLOWERS.length]} stroke="#FFFFFF" strokeOpacity={0.6} strokeWidth={Math.max(0.6, s * 0.012)} />
+      ))}
+      <Hive x={s * 0.14} y={s * 0.16} w={w} lid={lids[k % lids.length]} s={s} />
+      <Hive x={s * 0.52} y={s * 0.2} w={w} lid={lids[(k + 1) % lids.length]} s={s} />
+      <Hive x={s * 0.28} y={s * 0.54} w={w} lid={lids[(k + 2) % lids.length]} s={s} />
+    </G>
+  );
+}
+
+// --- Sunset Canyon -----------------------------------------------------------------
+
+/** An adobe house: a flat roof sunk behind its parapet, log ends poking out. */
+function Adobe({ s, h }: { s: number; h: number }) {
+  const wide = h > 0.5;
+  const w = s * (wide ? 0.64 : 0.52);
+  const d = s * (wide ? 0.5 : 0.6);
+  const x = (s - w) / 2;
+  const y = (s - d) / 2;
+  const lip = s * 0.06;
+  return (
+    <G>
+      <Shadow x={x} y={y} w={w} d={d} s={s} />
+      {[0.3, 0.5, 0.7].map((f) => (
+        <Rect key={f} x={x - s * 0.05} y={y + d * f - s * 0.025} width={s * 0.08} height={s * 0.05} rx={s * 0.02} fill={theme.trunk} />
+      ))}
+      <Rect x={x} y={y} width={w} height={d} rx={s * 0.03} fill={pick(["#D98A5C", "#E0A071", "#CF7B52"], h * 3)} {...ink(s)} />
+      <Rect x={x + lip} y={y + lip} width={w - lip * 2} height={d - lip * 2} rx={s * 0.02} fill="#000" opacity={0.14} />
+      <Rect x={x + w * 0.58} y={y + d * 0.24} width={s * 0.12} height={s * 0.08} rx={s * 0.015} fill="#B8663F" />
+      <Circle cx={x + w * 0.32} cy={y + d * 0.66} r={s * 0.065} fill="#C47449" {...ink(s)} />
+    </G>
+  );
+}
+
+/** A saguaro with its arms up, a barrel cactus beside it on a good day. */
+function Cactus({ s, h }: { s: number; h: number }) {
+  const green = "#4E9E5A";
+  const trunk = (dx: number, dy: number) => `M ${s * 0.48 + dx},${s * 0.78 + dy} L ${s * 0.48 + dx},${s * 0.22 + dy}`;
+  const arms = (dx: number, dy: number) =>
+    `M ${s * 0.48 + dx},${s * 0.56 + dy} L ${s * 0.32 + dx},${s * 0.56 + dy} L ${s * 0.32 + dx},${s * 0.4 + dy} ` +
+    `M ${s * 0.48 + dx},${s * 0.46 + dy} L ${s * 0.64 + dx},${s * 0.46 + dy} L ${s * 0.64 + dx},${s * 0.3 + dy}`;
+  const body = s * 0.13;
+  const arm = s * 0.09;
+  const off = s * 0.05;
+  return (
+    <G>
+      <Ellipse cx={s * 0.52} cy={s * 0.8} rx={s * 0.24} ry={s * 0.08} fill={SAND} />
+      <Path d={trunk(off, off)} stroke="#000" strokeOpacity={0.18} strokeWidth={body} strokeLinecap="round" />
+      <Path d={arms(off, off)} stroke="#000" strokeOpacity={0.18} strokeWidth={arm} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <Path d={trunk(0, 0)} stroke={green} strokeWidth={body} strokeLinecap="round" />
+      <Path d={arms(0, 0)} stroke={green} strokeWidth={arm} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <Path d={trunk(-s * 0.025, 0)} stroke="#72C07A" strokeWidth={Math.max(1, s * 0.025)} strokeLinecap="round" />
+      <Circle cx={s * 0.48} cy={s * 0.2} r={s * 0.04} fill="#FF7AA8" />
+      {h > 0.5 ? (
+        <G>
+          <Circle cx={s * 0.8} cy={s * 0.74} r={s * 0.09} fill="#000" opacity={0.16} />
+          <Circle cx={s * 0.77} cy={s * 0.71} r={s * 0.09} fill={green} {...ink(s)} />
+          <Circle cx={s * 0.77} cy={s * 0.71} r={s * 0.045} fill="#72C07A" />
+          <Circle cx={s * 0.77} cy={s * 0.71} r={s * 0.022} fill="#FF7AA8" />
+        </G>
+      ) : null}
+    </G>
+  );
+}
+
+/**
+ * A mesa, side-on like the cactus: a flat-topped butte banded in red rock.
+ * (Drawn from above, as stacked layers, it read as a cushion.)
+ */
+function Mesa({ s, h }: { s: number; h: number }) {
+  // Mirrored on half the hashes, so a canyon's mesas don't all lean one way.
+  const X = (u: number) => (h > 0.5 ? s - u * s : u * s);
+  const Y = (v: number) => v * s;
+  const poly = (pts: number[][]) => `M ${pts.map(([u, v]) => `${X(u)},${Y(v)}`).join(" L ")} Z`;
+  // The butte's left and right edges, for laying bands across it.
+  const left = (v: number) => 0.24 - ((v - 0.36) / 0.44) * 0.1;
+  const right = (v: number) => 0.78 + ((v - 0.38) / 0.42) * 0.08;
+  const band = (v0: number, v1: number) =>
+    poly([
+      [left(v0), v0],
+      [right(v0), v0],
+      [right(v1), v1],
+      [left(v1), v1],
+    ]);
+  return (
+    <G>
+      <Ellipse cx={s / 2 + s * 0.05} cy={Y(0.82)} rx={s * 0.4} ry={s * 0.08} fill="#000" opacity={0.18} />
+      <Path d={poly([[0.14, 0.8], [0.24, 0.36], [0.32, 0.3], [0.7, 0.3], [0.78, 0.38], [0.86, 0.8]])} fill="#C9694A" {...ink(s)} />
+      <Path d={poly([[0.24, 0.36], [0.32, 0.3], [0.7, 0.3], [0.78, 0.38]])} fill="#E8946B" />
+      <Path d={band(0.5, 0.56)} fill="#A9543A" opacity={0.7} />
+      <Path d={band(0.66, 0.71)} fill="#A9543A" opacity={0.7} />
+      <Path d={poly([[0.62, 0.38], [0.78, 0.38], [0.86, 0.8], [0.66, 0.8]])} fill="#000" opacity={0.12} />
+      <Ellipse cx={X(0.12)} cy={Y(0.84)} rx={s * 0.05} ry={s * 0.03} fill="#B5573A" />
+      <Ellipse cx={X(0.9)} cy={Y(0.86)} rx={s * 0.04} ry={s * 0.025} fill="#B5573A" />
+    </G>
+  );
+}
+
+/** A palm from above: a star of fronds round the crown. */
+function Palm({ x, y, r }: { x: number; y: number; r: number }) {
+  const n = 7;
+  const angles = Array.from({ length: n }, (_, i) => (i / n) * Math.PI * 2 + 0.3);
+  return (
+    <G>
+      <Circle cx={x + r * 0.3} cy={y + r * 0.35} r={r * 0.9} fill="#000" opacity={0.16} />
+      {angles.map((a, i) => (
+        <Path key={i} d={leaf(x, y, r, a, r * 0.24)} fill="#3F9E4D" stroke="#2F7A3B" strokeWidth={Math.max(0.6, r * 0.05)} />
+      ))}
+      {angles.map((a, i) => (
+        <Path
+          key={`v${i}`}
+          d={`M ${x},${y} L ${x + Math.cos(a) * r * 0.85},${y + Math.sin(a) * r * 0.85}`}
+          stroke="#6DBB5F"
+          strokeWidth={Math.max(0.6, r * 0.06)}
+        />
+      ))}
+      <Circle cx={x} cy={y} r={r * 0.16} fill={theme.trunk} />
+    </G>
+  );
+}
+
+/** A spring in the sand, and the palm it keeps alive. */
+function Oasis({ s }: { s: number }) {
+  return (
+    <G>
+      <Sand s={s} />
+      <Ellipse cx={s * 0.56} cy={s * 0.6} rx={s * 0.26} ry={s * 0.2} fill="#4AA8D0" />
+      <Ellipse cx={s * 0.56} cy={s * 0.6} rx={s * 0.22} ry={s * 0.16} fill={theme.pond} />
+      <Ellipse cx={s * 0.5} cy={s * 0.55} rx={s * 0.08} ry={s * 0.03} fill="#FFFFFF" opacity={0.6} />
+      <Palm x={s * 0.32} y={s * 0.32} r={s * 0.2} />
+    </G>
+  );
+}
+
+// --- Palm Isles --------------------------------------------------------------------
+
+function Palms({ s, h }: { s: number; h: number }) {
+  return h < 0.5 ? (
+    <G>
+      <Palm x={s * 0.36} y={s * 0.38} r={s * 0.22} />
+      <Palm x={s * 0.68} y={s * 0.66} r={s * 0.19} />
+    </G>
+  ) : (
+    <G>
+      <Palm x={s * 0.3} y={s * 0.3} r={s * 0.17} />
+      <Palm x={s * 0.7} y={s * 0.38} r={s * 0.17} />
+      <Palm x={s * 0.44} y={s * 0.72} r={s * 0.18} />
+    </G>
+  );
+}
+
+/** A round thatched hut: straw laid in ridges from the crown, a walkway out. */
+function Tiki({ s, h }: { s: number; h: number }) {
+  const c = s / 2;
+  const r = s * 0.3;
+  return (
+    <G>
+      {h > 0.5 ? <Rect x={c - s * 0.05} y={c + r * 0.8} width={s * 0.1} height={s * 0.18} rx={s * 0.02} fill={theme.trunk} /> : null}
+      <Circle cx={c + s * 0.05} cy={c + s * 0.06} r={r} fill="#000" opacity={0.2} />
+      <Circle cx={c} cy={c} r={r} fill="#D9B26A" {...ink(s)} />
+      {Array.from({ length: 12 }, (_, i) => {
+        const a = (i / 12) * Math.PI * 2;
+        return (
+          <Path
+            key={i}
+            d={`M ${c + Math.cos(a) * r * 0.3},${c + Math.sin(a) * r * 0.3} L ${c + Math.cos(a) * r * 0.95},${c + Math.sin(a) * r * 0.95}`}
+            stroke="#B98F48"
+            strokeWidth={Math.max(1, s * 0.02)}
+          />
+        );
+      })}
+      <Path d={`M ${c},${c - r} A ${r} ${r} 0 0 1 ${c},${c + r} Z`} fill="#000" opacity={0.12} />
+      <Circle cx={c} cy={c} r={r * 0.3} fill="#E6C27E" />
+      <Circle cx={c} cy={c} r={r * 0.12} fill={theme.trunk} />
+    </G>
+  );
+}
+
+/** A lagoon: warm shallow water inside a rim of sand. */
+function Lagoon({ s }: { s: number }) {
+  return (
+    <G>
+      <Ellipse cx={s / 2} cy={s / 2} rx={s * 0.4} ry={s * 0.33} fill={SAND} stroke={SAND_EDGE} strokeWidth={Math.max(1, s * 0.02)} />
+      <Ellipse cx={s / 2} cy={s / 2} rx={s * 0.33} ry={s * 0.26} fill="#2FC1D3" />
+      <Ellipse cx={s * 0.52} cy={s * 0.53} rx={s * 0.22} ry={s * 0.15} fill="#6FE3E6" />
+      <Ellipse cx={s * 0.4} cy={s * 0.42} rx={s * 0.1} ry={s * 0.035} fill="#FFFFFF" opacity={0.6} />
+    </G>
+  );
+}
+
+// --- Frost Valley ------------------------------------------------------------------
+
+/** A chalet under snow, its wooden eaves showing round the edge. */
+function Chalet({ s, h }: { s: number; h: number }) {
+  const w = s * 0.56;
+  const d = s * 0.5;
+  const x = (s - w) / 2;
+  const y = (s - d) / 2;
+  const e = s * 0.035;
+  return (
+    <G>
+      <Shadow x={x - e} y={y - e} w={w + e * 2} d={d + e * 2} s={s} />
+      <Rect x={x - e} y={y - e} width={w + e * 2} height={d + e * 2} rx={s * 0.05} fill="#8B5A3C" {...ink(s)} />
+      <Roof x={x} y={y} w={w} d={d} s={s} fill="#F3F7FB" across={h > 0.5} />
+      <Rect x={x + w * 0.66} y={y + d * 0.12} width={s * 0.1} height={s * 0.1} rx={s * 0.02} fill="#A9A399" />
+      <Rect x={x + w * 0.66} y={y + d * 0.12} width={s * 0.1} height={s * 0.04} rx={s * 0.02} fill="#FFFFFF" />
+    </G>
+  );
+}
+
+/** A pine with snow lying on its boughs. */
+function SnowPine({ x, y, r }: { x: number; y: number; r: number }) {
+  return (
+    <G>
+      <Pine x={x} y={y} r={r} />
+      <Circle cx={x - r * 0.25} cy={y - r * 0.3} r={r * 0.36} fill="#FFFFFF" opacity={0.92} />
+      <Circle cx={x + r * 0.38} cy={y + r * 0.12} r={r * 0.2} fill="#FFFFFF" opacity={0.85} />
+      <Circle cx={x - r * 0.12} cy={y + r * 0.48} r={r * 0.15} fill="#FFFFFF" opacity={0.8} />
+    </G>
+  );
+}
+
+function SnowPines({ s, h }: { s: number; h: number }) {
+  return h < 0.4 ? (
+    <G>
+      <SnowPine x={s * 0.34} y={s * 0.36} r={s * 0.17} />
+      <SnowPine x={s * 0.66} y={s * 0.62} r={s * 0.19} />
+    </G>
+  ) : (
+    <G>
+      <SnowPine x={s * 0.3} y={s * 0.3} r={s * 0.14} />
+      <SnowPine x={s * 0.68} y={s * 0.36} r={s * 0.16} />
+      <SnowPine x={s * 0.44} y={s * 0.68} r={s * 0.17} />
+    </G>
+  );
+}
+
+/** A snowman on his patch of snow: hat, scarf, carrot. */
+function Snowman({ s }: { s: number }) {
+  const dot = s * 0.018;
+  return (
+    <G>
+      <Ellipse cx={s * 0.5} cy={s * 0.66} rx={s * 0.34} ry={s * 0.22} fill="#F4F8FC" opacity={0.95} />
+      <Circle cx={s * 0.55} cy={s * 0.67} r={s * 0.2} fill="#000" opacity={0.14} />
+      <Circle cx={s * 0.5} cy={s * 0.62} r={s * 0.2} fill="#FFFFFF" {...ink(s)} />
+      <Circle cx={s * 0.5} cy={s * 0.35} r={s * 0.14} fill="#FFFFFF" {...ink(s)} />
+      <Rect x={s * 0.38} y={s * 0.45} width={s * 0.24} height={s * 0.06} rx={s * 0.03} fill="#E84A5F" />
+      <Rect x={s * 0.55} y={s * 0.45} width={s * 0.05} height={s * 0.13} rx={s * 0.02} fill="#E84A5F" />
+      <Rect x={s * 0.37} y={s * 0.2} width={s * 0.26} height={s * 0.035} rx={s * 0.015} fill={theme.text} />
+      <Rect x={s * 0.42} y={s * 0.11} width={s * 0.16} height={s * 0.1} rx={s * 0.02} fill={theme.text} />
+      <Circle cx={s * 0.46} cy={s * 0.32} r={dot} fill={theme.text} />
+      <Circle cx={s * 0.54} cy={s * 0.32} r={dot} fill={theme.text} />
+      <Path d={`M ${s * 0.5},${s * 0.35} L ${s * 0.61},${s * 0.375} L ${s * 0.5},${s * 0.395} Z`} fill="#FF9F43" />
+      <Circle cx={s * 0.5} cy={s * 0.6} r={dot * 1.2} fill={theme.text} />
+      <Circle cx={s * 0.5} cy={s * 0.68} r={dot * 1.2} fill={theme.text} />
+    </G>
+  );
+}
+
+/** An ice rink: white boards round a sheet of ice, skate marks on it. */
+function Rink({ s }: { s: number }) {
+  const sw = Math.max(1, s * 0.022);
+  return (
+    <G>
+      <Rect x={s * 0.15} y={s * 0.26} width={s * 0.8} height={s * 0.6} rx={s * 0.3} fill="#000" opacity={0.16} />
+      <Rect x={s * 0.1} y={s * 0.2} width={s * 0.8} height={s * 0.6} rx={s * 0.3} fill="#FFFFFF" {...ink(s)} />
+      <Rect x={s * 0.14} y={s * 0.24} width={s * 0.72} height={s * 0.52} rx={s * 0.26} fill="#CFEFFF" />
+      <Path d={`M ${s * 0.5},${s * 0.24} L ${s * 0.5},${s * 0.76}`} stroke="#E84A5F" strokeOpacity={0.6} strokeWidth={sw} />
+      <Circle cx={s * 0.5} cy={s * 0.5} r={s * 0.08} fill="none" stroke="#E84A5F" strokeOpacity={0.6} strokeWidth={sw} />
+      <Path
+        d={`M ${s * 0.22},${s * 0.4} Q ${s * 0.34},${s * 0.3} ${s * 0.42},${s * 0.42} M ${s * 0.58},${s * 0.62} Q ${s * 0.68},${s * 0.72} ${s * 0.78},${s * 0.6}`}
+        stroke="#FFFFFF"
+        strokeWidth={sw}
+        fill="none"
+        strokeLinecap="round"
+      />
+    </G>
+  );
+}
+
+/** A frozen pond on a snowy bank, the ice cracked across. */
+function Ice({ s }: { s: number }) {
+  return (
+    <G>
+      <Ellipse cx={s / 2} cy={s / 2} rx={s * 0.4} ry={s * 0.33} fill="#F4F8FC" />
+      <Ellipse cx={s / 2} cy={s / 2} rx={s * 0.34} ry={s * 0.27} fill="#BFE3F5" stroke="#9CCBE6" strokeWidth={Math.max(1, s * 0.02)} />
+      <Ellipse cx={s * 0.42} cy={s * 0.42} rx={s * 0.13} ry={s * 0.045} fill="#FFFFFF" opacity={0.7} />
+      <Path
+        d={`M ${s * 0.28},${s * 0.56} L ${s * 0.4},${s * 0.5} L ${s * 0.5},${s * 0.58} L ${s * 0.64},${s * 0.52} M ${s * 0.5},${s * 0.58} L ${s * 0.54},${s * 0.68}`}
+        stroke="#8FC3DE"
+        strokeWidth={Math.max(1, s * 0.022)}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </G>
+  );
+}
+
+/** A boulder with snow settled on its top. */
+function SnowRock({ x, y, w, d }: { x: number; y: number; w: number; d: number }) {
+  return (
+    <G>
+      <Rock x={x} y={y} w={w} d={d} />
+      <Ellipse cx={x - w * 0.08} cy={y - d * 0.18} rx={w * 0.32} ry={d * 0.22} fill="#FFFFFF" opacity={0.95} />
+    </G>
+  );
+}
+
+function SnowRocks({ s, h }: { s: number; h: number }) {
+  return h < 0.5 ? (
+    <G>
+      <SnowRock x={s * 0.44} y={s * 0.46} w={s * 0.5} d={s * 0.4} />
+      <SnowRock x={s * 0.72} y={s * 0.72} w={s * 0.22} d={s * 0.18} />
+    </G>
+  ) : (
+    <G>
+      <SnowRock x={s * 0.34} y={s * 0.36} w={s * 0.32} d={s * 0.26} />
+      <SnowRock x={s * 0.64} y={s * 0.5} w={s * 0.36} d={s * 0.3} />
+      <SnowRock x={s * 0.36} y={s * 0.7} w={s * 0.2} d={s * 0.16} />
+    </G>
+  );
+}
+
+// --- Lantern Town ------------------------------------------------------------------
+
+const LANTERNS = ["#FF6B5B", "#FFB347", "#FF8FB1"];
+
+/** A house with a string of paper lanterns slung across its roof, glowing. */
+function Lit({ s, h }: { s: number; h: number }) {
+  const wide = h > 0.5;
+  const w = s * (wide ? 0.66 : 0.52);
+  const d = s * (wide ? 0.5 : 0.62);
+  const x = (s - w) / 2;
+  const y = (s - d) / 2;
+  // The string sags from one corner of the roof to the other.
+  const x0 = x;
+  const y0 = y + d * 0.2;
+  const x1 = x + w;
+  const y1 = y + d * 0.8;
+  const qx = (x0 + x1) / 2;
+  const qy = (y0 + y1) / 2 + s * 0.08;
+  const at = (t: number) => ({
+    x: (1 - t) * (1 - t) * x0 + 2 * (1 - t) * t * qx + t * t * x1,
+    y: (1 - t) * (1 - t) * y0 + 2 * (1 - t) * t * qy + t * t * y1,
+  });
+  return (
+    <G>
+      <Shadow x={x} y={y} w={w} d={d} s={s} />
+      <Roof x={x} y={y} w={w} d={d} s={s} fill={pick(["#7A4E8F", "#4F5D9A", "#B0443A", "#3F7F7A"], h * 4)} across={wide} />
+      <Path d={`M ${x0},${y0} Q ${qx},${qy} ${x1},${y1}`} stroke={theme.text} strokeOpacity={0.5} strokeWidth={Math.max(0.8, s * 0.015)} fill="none" />
+      {[0.1, 0.3, 0.5, 0.7, 0.9].map((t, i) => {
+        const p = at(t);
+        return (
+          <G key={i}>
+            <Circle cx={p.x} cy={p.y} r={s * 0.075} fill="#FFD27A" opacity={0.35} />
+            <Circle cx={p.x} cy={p.y} r={s * 0.036} fill={LANTERNS[(i + Math.floor(h * 3)) % LANTERNS.length]} {...ink(s)} />
+          </G>
+        );
+      })}
+    </G>
+  );
+}
+
+/** A street lamp from above: its head, and the warm pool it throws. */
+function Lamp({ x, y, s }: { x: number; y: number; s: number }) {
+  return (
+    <G>
+      <Circle cx={x} cy={y} r={s * 0.2} fill="#FFE9A8" opacity={0.55} />
+      <Circle cx={x} cy={y} r={s * 0.12} fill="#FFF3C4" opacity={0.6} />
+      <Circle cx={x + s * 0.03} cy={y + s * 0.04} r={s * 0.045} fill="#000" opacity={0.2} />
+      <Circle cx={x} cy={y} r={s * 0.045} fill="#FFF8DC" {...ink(s)} />
+    </G>
+  );
+}
+
+/** A lamplit square: paving, two lamps, and a bench on a good day. */
+function Lamps({ s, h }: { s: number; h: number }) {
+  return (
+    <G>
+      <Rect x={s * 0.08} y={s * 0.08} width={s * 0.84} height={s * 0.84} rx={s * 0.12} fill="#D8D2C4" />
+      <Lamp x={s * 0.3} y={s * 0.32} s={s} />
+      <Lamp x={s * 0.7} y={s * 0.68} s={s} />
+      {h > 0.5 ? <Rect x={s * 0.56} y={s * 0.2} width={s * 0.22} height={s * 0.07} rx={s * 0.02} fill={theme.trunk} /> : null}
+    </G>
+  );
+}
+
+// --- Ember Ridge -------------------------------------------------------------------
+
+/** A house roofed in the dark stone of the mountain, its chimney glowing. */
+function StoneHouse({ s, h }: { s: number; h: number }) {
+  const wide = h > 0.5;
+  const w = s * (wide ? 0.64 : 0.5);
+  const d = s * (wide ? 0.5 : 0.62);
+  const x = (s - w) / 2;
+  const y = (s - d) / 2;
+  return (
+    <G>
+      <Shadow x={x} y={y} w={w} d={d} s={s} />
+      {/* Warm tuff, not charcoal: a dark grey roof with a pale ridge line is
+          exactly what a piece of road looks like at 8×8. */}
+      <Roof x={x} y={y} w={w} d={d} s={s} fill={pick(["#8C6A5C", "#7A5E54", "#96786A"], h * 3)} across={wide} />
+      {[
+        [0.2, 0.22],
+        [0.36, 0.7],
+        [0.7, 0.66],
+      ].map(([u, v], i) => (
+        <Rect key={i} x={x + w * u} y={y + d * v} width={s * 0.08} height={s * 0.05} rx={s * 0.02} fill="#000" opacity={0.14} />
+      ))}
+      <Rect x={x + w * 0.64} y={y + d * 0.12} width={s * 0.1} height={s * 0.1} rx={s * 0.02} fill="#8A847C" />
+      <Circle cx={x + w * 0.64 + s * 0.05} cy={y + d * 0.12 + s * 0.05} r={s * 0.025} fill="#FF9A5A" />
+    </G>
+  );
+}
+
+/** A lump of lava rock, still glowing in its cracks. */
+function LavaStone({ x, y, w, d }: { x: number; y: number; w: number; d: number }) {
+  const crack =
+    `M ${x - w * 0.3},${y + d * 0.05} L ${x - w * 0.05},${y - d * 0.12} ` +
+    `L ${x + w * 0.12},${y + d * 0.12} L ${x + w * 0.3},${y - d * 0.02}`;
+  return (
+    <G>
+      <Ellipse cx={x + w * 0.12} cy={y + d * 0.18} rx={w / 2} ry={d / 2} fill="#000" opacity={0.22} />
+      <Ellipse cx={x} cy={y} rx={w / 2} ry={d / 2} fill="#3F3739" stroke={theme.text} strokeOpacity={0.35} strokeWidth={Math.max(1, w * 0.05)} />
+      <Ellipse cx={x - w * 0.14} cy={y - d * 0.18} rx={w * 0.22} ry={d * 0.16} fill="#5A5054" />
+      <Path d={crack} stroke="#FF7A3D" strokeWidth={Math.max(1, w * 0.08)} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <Path d={crack} stroke="#FFD27A" strokeWidth={Math.max(0.6, w * 0.03)} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </G>
+  );
+}
+
+function LavaRocks({ s, h }: { s: number; h: number }) {
+  return h < 0.5 ? (
+    <G>
+      <LavaStone x={s * 0.44} y={s * 0.46} w={s * 0.5} d={s * 0.4} />
+      <LavaStone x={s * 0.72} y={s * 0.72} w={s * 0.22} d={s * 0.18} />
+    </G>
+  ) : (
+    <G>
+      <LavaStone x={s * 0.34} y={s * 0.36} w={s * 0.32} d={s * 0.26} />
+      <LavaStone x={s * 0.64} y={s * 0.52} w={s * 0.36} d={s * 0.3} />
+    </G>
+  );
+}
+
+/** A hot spring in a ring of stones, steaming. */
+function HotSpring({ s }: { s: number }) {
+  const wisp = (x: number, y: number) =>
+    `M ${x},${y} C ${x + s * 0.05},${y - s * 0.06} ${x - s * 0.05},${y - s * 0.12} ${x},${y - s * 0.18}`;
+  return (
+    <G>
+      <Ellipse cx={s / 2 + s * 0.03} cy={s / 2 + s * 0.05} rx={s * 0.4} ry={s * 0.33} fill="#000" opacity={0.16} />
+      <Ellipse cx={s / 2} cy={s / 2} rx={s * 0.4} ry={s * 0.33} fill="#A9A399" {...ink(s)} />
+      <Ellipse cx={s / 2} cy={s / 2} rx={s * 0.32} ry={s * 0.25} fill="#3FB8A8" />
+      <Ellipse cx={s * 0.52} cy={s * 0.53} rx={s * 0.22} ry={s * 0.15} fill="#7FDCCF" />
+      {[
+        [0.4, 0.56],
+        [0.54, 0.5],
+        [0.64, 0.6],
+      ].map(([x, y], i) => (
+        <Path key={i} d={wisp(s * x, s * y)} stroke="#FFFFFF" strokeOpacity={0.75} strokeWidth={Math.max(1, s * 0.03)} fill="none" strokeLinecap="round" />
+      ))}
+    </G>
+  );
+}
+
+// --- Blossom Valley ----------------------------------------------------------------
+
+/** A cherry tree in flower. */
+function Blossom({ x, y, r }: { x: number; y: number; r: number }) {
+  return (
+    <G>
+      <Ellipse cx={x + r * 0.25} cy={y + r * 0.35} rx={r} ry={r * 0.9} fill="#000" opacity={0.16} />
+      <Circle cx={x} cy={y} r={r} fill="#F29BC0" />
+      <Circle cx={x - r * 0.28} cy={y - r * 0.28} r={r * 0.55} fill="#FFC4DC" />
+      {[
+        [0.45, 0.1],
+        [-0.1, 0.5],
+        [0.2, -0.55],
+        [-0.55, 0.05],
+        [0.35, 0.45],
+      ].map(([u, v], i) => (
+        <Circle key={i} cx={x + u * r} cy={y + v * r} r={r * 0.1} fill="#FFFFFF" opacity={0.85} />
+      ))}
+    </G>
+  );
+}
+
+/** Cherry trees, and the petals they have let go of. */
+function Cherry({ s, h }: { s: number; h: number }) {
+  const petals = [
+    [0.16, 0.8],
+    [0.84, 0.2],
+    [0.8, 0.86],
+    [0.22, 0.14],
+  ];
+  return (
+    <G>
+      {petals.map(([x, y], i) => (
+        <Circle key={i} cx={s * x} cy={s * y} r={s * 0.025} fill="#F7A8C8" />
+      ))}
+      {h < 0.33 ? (
+        <Blossom x={s * 0.5} y={s * 0.48} r={s * 0.25} />
+      ) : h < 0.7 ? (
+        <G>
+          <Blossom x={s * 0.34} y={s * 0.36} r={s * 0.18} />
+          <Blossom x={s * 0.64} y={s * 0.62} r={s * 0.2} />
+        </G>
+      ) : (
+        <G>
+          <Blossom x={s * 0.3} y={s * 0.32} r={s * 0.15} />
+          <Blossom x={s * 0.68} y={s * 0.34} r={s * 0.15} />
+          <Blossom x={s * 0.47} y={s * 0.68} r={s * 0.17} />
+        </G>
+      )}
+    </G>
+  );
+}
+
+/** A teahouse: a tiled roof on red beams, stepping stones to its door. */
+function Teahouse({ s, h }: { s: number; h: number }) {
+  const w = s * 0.56;
+  const d = s * 0.46;
+  const x = (s - w) / 2;
+  const y = s * 0.18;
+  const e = s * 0.04;
+  return (
+    <G>
+      <Shadow x={x - e} y={y - e} w={w + e * 2} d={d + e * 2} s={s} />
+      <Rect x={x - e} y={y - e} width={w + e * 2} height={d + e * 2} rx={s * 0.08} fill="#C8453C" {...ink(s)} />
+      <Roof x={x} y={y} w={w} d={d} s={s} fill={pick(["#3F8A8F", "#5E8A4F", "#7A62A8"], h * 3)} across />
+      <Circle cx={s * 0.5} cy={s * 0.78} r={s * 0.045} fill="#C8C2B6" {...ink(s)} />
+      <Circle cx={s * 0.42} cy={s * 0.89} r={s * 0.04} fill="#C8C2B6" {...ink(s)} />
+    </G>
+  );
+}
+
+/** A koi, from its tail (x, y) out along angle `a`. */
+function Fish({ x, y, a, len, colour }: { x: number; y: number; a: number; len: number; colour: string }) {
+  const bx = x - Math.cos(a) * len * 0.22;
+  const by = y - Math.sin(a) * len * 0.22;
+  const nx = -Math.sin(a) * len * 0.16;
+  const ny = Math.cos(a) * len * 0.16;
+  return (
+    <G>
+      <Path d={`M ${x},${y} L ${bx + nx},${by + ny} L ${bx - nx},${by - ny} Z`} fill={colour} opacity={0.9} />
+      <Path d={leaf(x, y, len, a, len * 0.26)} fill={colour} />
+      <Circle cx={x + Math.cos(a) * len * 0.55} cy={y + Math.sin(a) * len * 0.55} r={len * 0.1} fill={colour === "#FFFFFF" ? "#FF8A3D" : "#FFFFFF"} opacity={0.9} />
+    </G>
+  );
+}
+
+/** A koi pond in its ring of stones, a lily pad on it. */
+function Koi({ s }: { s: number }) {
+  return (
+    <G>
+      <Ellipse cx={s / 2} cy={s / 2} rx={s * 0.4} ry={s * 0.33} fill="#C8C2B6" {...ink(s)} />
+      <Ellipse cx={s / 2} cy={s / 2} rx={s * 0.34} ry={s * 0.27} fill="#3A8FB8" />
+      <Ellipse cx={s * 0.4} cy={s * 0.38} rx={s * 0.1} ry={s * 0.035} fill="#FFFFFF" opacity={0.45} />
+      <Circle cx={s * 0.66} cy={s * 0.38} r={s * 0.07} fill="#63B847" />
+      <Path d={`M ${s * 0.66},${s * 0.38} L ${s * 0.74},${s * 0.34} L ${s * 0.74},${s * 0.42} Z`} fill="#3A8FB8" />
+      <Fish x={s * 0.3} y={s * 0.6} a={-0.35} len={s * 0.2} colour="#FF8A3D" />
+      <Fish x={s * 0.66} y={s * 0.62} a={2.7} len={s * 0.17} colour="#FFFFFF" />
+    </G>
+  );
+}
+
+// --- Castle Hill -------------------------------------------------------------------
+
+/** A round tower: battlements round a conical roof, a pennant at its point. */
+function Turret({ s, h }: { s: number; h: number }) {
+  const c = s / 2;
+  const r = s * 0.32;
+  const roof = pick(["#5F7FD6", "#C8453C", "#7A4FC4", "#27B9A8"], h * 4);
+  const flag = roof === "#C8453C" ? "#FFFFFF" : "#E84A5F";
+  const m = r * 0.2;
+  return (
+    <G>
+      <Circle cx={c + s * 0.06} cy={c + s * 0.07} r={r} fill="#000" opacity={0.22} />
+      <Circle cx={c} cy={c} r={r} fill="#C9C4BA" {...ink(s)} />
+      {Array.from({ length: 10 }, (_, i) => {
+        const a = (i / 10) * Math.PI * 2;
+        return (
+          <Rect
+            key={i}
+            x={c + Math.cos(a) * r * 0.84 - m / 2}
+            y={c + Math.sin(a) * r * 0.84 - m / 2}
+            width={m}
+            height={m}
+            rx={m * 0.2}
+            fill="#E0DCD3"
+          />
+        );
+      })}
+      <Circle cx={c} cy={c} r={r * 0.62} fill={roof} {...ink(s)} />
+      <Path d={`M ${c},${c - r * 0.62} A ${r * 0.62} ${r * 0.62} 0 0 1 ${c},${c + r * 0.62} Z`} fill="#000" opacity={0.16} />
+      <Path d={`M ${c},${c} L ${c + r * 0.62},${c - r * 0.3} L ${c + r * 0.05},${c - r * 0.5} Z`} fill={flag} {...ink(s)} />
+      <Circle cx={c} cy={c} r={s * 0.025} fill={theme.trunk} />
+    </G>
+  );
+}
+
+/** A square keep: battlements round a sunken roof, its banner flying. */
+function Keep({ s, h }: { s: number; h: number }) {
+  const x = s * 0.16;
+  const w = s * 0.68;
+  const deck = "#A7A196";
+  const notch = s * 0.06;
+  const at = [0.3, 0.5, 0.7];
+  return (
+    <G>
+      <Rect x={x + s * 0.07} y={x + s * 0.09} width={w} height={w} rx={s * 0.04} fill="#000" opacity={0.24} />
+      <Rect x={x} y={x} width={w} height={w} rx={s * 0.03} fill="#C9C4BA" {...ink(s)} />
+      <Rect x={x + s * 0.08} y={x + s * 0.08} width={w - s * 0.16} height={w - s * 0.16} rx={s * 0.02} fill={deck} />
+      {at.flatMap((f, i) => [
+        <Rect key={`t${i}`} x={s * f - notch / 2} y={x} width={notch} height={s * 0.08} fill={deck} />,
+        <Rect key={`b${i}`} x={s * f - notch / 2} y={x + w - s * 0.08} width={notch} height={s * 0.08} fill={deck} />,
+        <Rect key={`l${i}`} x={x} y={s * f - notch / 2} width={s * 0.08} height={notch} fill={deck} />,
+        <Rect key={`r${i}`} x={x + w - s * 0.08} y={s * f - notch / 2} width={s * 0.08} height={notch} fill={deck} />,
+      ])}
+      <Rect x={s * 0.36} y={s * 0.58} width={s * 0.1} height={s * 0.08} rx={s * 0.015} fill={theme.trunk} />
+      <Path
+        d={`M ${s * 0.56},${s * 0.34} L ${s * 0.76},${s * 0.4} L ${s * 0.56},${s * 0.46} Z`}
+        fill={pick(["#5F7FD6", "#E84A5F", "#7A4FC4"], h * 3)}
+        {...ink(s)}
+      />
+      <Circle cx={s * 0.56} cy={s * 0.34} r={s * 0.025} fill={theme.trunk} />
+    </G>
+  );
+}
+
+/** A hedge maze on gravel, mirrored on half the hashes. */
+function Maze({ s, h }: { s: number; h: number }) {
+  const p = (i: number) => s * (0.16 + i * 0.17);
+  const X = (i: number) => (h > 0.5 ? s - p(i) : p(i));
+  const walls =
+    // the outer hedge, open at one corner and the opposite one
+    `M ${X(0)},${p(1)} L ${X(0)},${p(4)} L ${X(4)},${p(4)} ` +
+    `M ${X(1)},${p(0)} L ${X(4)},${p(0)} L ${X(4)},${p(3)} ` +
+    // the inside
+    `M ${X(1)},${p(1)} L ${X(3)},${p(1)} M ${X(2)},${p(1)} L ${X(2)},${p(3)} ` +
+    `M ${X(0)},${p(3)} L ${X(1)},${p(3)} M ${X(3)},${p(2)} L ${X(3)},${p(4)}`;
+  return (
+    <G>
+      <Rect x={s * 0.08} y={s * 0.08} width={s * 0.84} height={s * 0.84} rx={s * 0.08} fill="#E3D6B8" />
+      <Path d={walls} stroke="#000" strokeOpacity={0.16} strokeWidth={s * 0.08} strokeLinecap="square" fill="none" transform={`translate(${s * 0.02},${s * 0.03})`} />
+      <Path d={walls} stroke="#3F8A3A" strokeWidth={s * 0.08} strokeLinecap="square" strokeLinejoin="miter" fill="none" />
+      <Path d={walls} stroke="#5AAE4E" strokeWidth={s * 0.025} strokeLinecap="round" fill="none" />
     </G>
   );
 }

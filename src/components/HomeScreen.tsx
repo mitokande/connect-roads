@@ -8,7 +8,7 @@ import { Animated, Easing, Pressable, StyleSheet, Text, useWindowDimensions, Vie
 
 import { currentStreak, DAILY_UNLOCK, today, WEEK, WEEKDAYS, weekday } from "../game/daily";
 import { fleetById } from "../game/garage";
-import { LEVEL_COUNT, sizeForLevel } from "../game/levels";
+import { bandFor, LEVEL_COUNT, sizeForLevel } from "../game/levels";
 import { haptics } from "../haptics";
 import type { Progress } from "../state/useGame";
 import { sound } from "../sound";
@@ -59,7 +59,8 @@ export function HomeScreen({
 
   return (
     <View style={styles.page}>
-      <Scenery horizon={0.36} />
+      {/* The world the player has got to: the home screen is where the trip shows. */}
+      <Scenery horizon={0.36} region={bandFor(level).region} />
 
       <View style={styles.content}>
         <View style={styles.topBar}>
@@ -106,6 +107,7 @@ export function HomeScreen({
             width={Math.min(width - 44, 380)}
             rows={height > 800 ? 4 : 3}
             paints={fleetById(progress.fleet).paints}
+            region={bandFor(level).region}
           />
         </View>
 

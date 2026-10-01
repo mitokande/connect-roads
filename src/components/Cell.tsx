@@ -75,7 +75,7 @@ function CellView({ size, r, c, piece, claimed, ways, blocked, glow, wrong, town
       ]}
     >
       {scenery ? (
-        <TownArt size={size} kind={sceneryKind(townHash(r, c, (seed ?? 0) + 3))} h={townHash(c, r, seed ?? 0)} />
+        <TownArt size={size} kind={sceneryKind(region, townHash(r, c, (seed ?? 0) + 3))} h={townHash(c, r, seed ?? 0)} />
       ) : town ? (
         <TownGrow
           size={size}
