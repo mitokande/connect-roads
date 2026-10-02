@@ -62,12 +62,15 @@ const regionHeight = (count: number) => SIGN_H - 10 + Math.ceil(count / PER_ROW)
 
 export function LevelsScreen({
   unlockedLevel,
+  openAll = false,
   stars,
   paint,
   onPick,
   onBack,
 }: {
   unlockedLevel: number;
+  /** Debug only: every stop can be opened, wherever the car is (`src/debug.ts`). */
+  openAll?: boolean;
   stars: Record<number, number>;
   /** The lead car of the player's convoy, parked at the current stop. */
   paint?: Paint;
@@ -142,6 +145,7 @@ export function LevelsScreen({
             levels={levels}
             width={mapW}
             unlockedLevel={unlockedLevel}
+            openAll={openAll}
             stars={stars}
             paint={paint}
             onPick={onPick}
@@ -158,6 +162,7 @@ function Region({
   levels,
   width,
   unlockedLevel,
+  openAll,
   stars,
   paint,
   onPick,
@@ -166,6 +171,7 @@ function Region({
   levels: number[];
   width: number;
   unlockedLevel: number;
+  openAll: boolean;
   stars: Record<number, number>;
   paint?: Paint;
   onPick: (level: number) => void;
@@ -173,7 +179,7 @@ function Region({
   const region = REGIONS[band.region];
   const look = LOOKS[band.region];
   const { size } = band;
-  const locked = levels[0] > unlockedLevel;
+  const locked = !openAll && levels[0] > unlockedLevel;
   const earned = levels.reduce((a, l) => a + (stars[l] ?? 0), 0);
   const rows = Math.ceil(levels.length / PER_ROW);
   // Room under the last row for the town that grows beneath its stops.
@@ -280,7 +286,7 @@ function Region({
               y={p.y}
               color={region.color}
               dark={region.dark}
-              locked={level > unlockedLevel}
+              locked={!openAll && level > unlockedLevel}
               current={level === unlockedLevel}
               stars={stars[level] ?? 0}
               paint={paint}

@@ -117,6 +117,8 @@ export type Progress = {
    * A record, not a rule — nothing reads it back into play.
    */
   stars: Record<number, number>;
+  /** Debug only: every level on the map can be opened (`src/debug.ts`). */
+  openAll?: boolean;
 };
 
 const DEFAULT_PROGRESS: Progress = {

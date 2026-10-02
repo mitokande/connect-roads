@@ -26,6 +26,7 @@ import { LEVEL_COUNT } from "./src/game/levels";
 import { TECHNIQUES, techniqueDue, techniqueFor, type Technique } from "./src/game/tutorial";
 import { haptics } from "./src/haptics";
 import { sound } from "./src/sound";
+import { openAll } from "./src/debug";
 import { useBackHandler } from "./src/hooks/useBackHandler";
 import { useGame } from "./src/state/useGame";
 import { theme } from "./src/theme";
@@ -183,6 +184,7 @@ export default function App() {
           ) : screen === "levels" ? (
             <LevelsScreen
               unlockedLevel={game.progress.unlockedLevel}
+              openAll={openAll(game.progress)}
               stars={game.progress.stars}
               paint={fleetById(game.progress.fleet).paints[0]}
               onPick={play}

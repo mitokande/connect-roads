@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { Linking, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 
 import { privacyOptionsRequired, showPrivacyOptions } from "../ads";
+import { DEBUG_TOOLS } from "../debug";
 import { haptics } from "../haptics";
 import { sound } from "../sound";
 import type { Progress } from "../state/useGame";
@@ -120,6 +121,20 @@ export function SettingsOverlay({
           </Pressable>
         ) : null}
 
+        {DEBUG_TOOLS ? (
+          <View>
+            <Text style={styles.debugTitle}>Debug</Text>
+            <Row icon="bug" label="Open every level" tone={theme.danger}>
+              <Switch
+                value={!!progress.openAll}
+                onValueChange={(on) => onPatch({ openAll: on })}
+                trackColor={{ true: theme.danger, false: theme.panelEdge }}
+                thumbColor="#FFFFFF"
+              />
+            </Row>
+          </View>
+        ) : null}
+
         {confirming ? (
           <View style={styles.confirm}>
             <Text style={styles.confirmText}>
@@ -154,15 +169,18 @@ export function SettingsOverlay({
 function Row({
   icon,
   label,
+  tone,
   children,
 }: {
   icon: React.ComponentProps<typeof Ionicons>["name"];
   label: string;
+  /** The icon's disc, where it isn't the usual teal. */
+  tone?: string;
   children: React.ReactNode;
 }) {
   return (
     <View style={styles.settingRow}>
-      <View style={styles.rowIcon}>
+      <View style={[styles.rowIcon, tone ? { backgroundColor: tone } : null]}>
         <Ionicons name={icon} size={18} color={theme.onAccent} />
       </View>
       <Text style={styles.settingLabel}>{label}</Text>
@@ -208,6 +226,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   settingLabel: { flex: 1, fontSize: 17, fontFamily: font.semi, color: theme.text },
+  debugTitle: {
+    marginTop: 14,
+    fontSize: 12,
+    fontFamily: font.bold,
+    color: theme.danger,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
   reset: { flexDirection: "row", alignItems: "center", gap: 7, paddingTop: 16 },
   resetText: { color: theme.danger, fontFamily: font.semi, fontSize: 15 },
   confirm: { paddingTop: 16 },

@@ -282,6 +282,7 @@ src/components/             Board, Cell, RoadPiece, CarRide, screens, overlays
   GuideHand.tsx             the animated finger that demonstrates each gesture
   Logo.tsx / Display.tsx    the wordmark, and outlined display type
 src/haptics.ts              vibration, one switch
+src/debug.ts                testing tools (open every level), dev builds only
 src/ads.ts                  rewarded video (revive, hint); skipped with the reward paid in Expo Go and on the web
 src/sound.ts                sound effects and the music loop, one switch each
 src/theme.ts                palette, fonts, regions and their looks; colour is assigned by function
@@ -1017,6 +1018,15 @@ The streak (`recordDaily`, `currentStreak`) counts days in a row: the next day's
 road extends it, a gap restarts it at one, the same day again changes only its
 stars, and it stays alive until a whole day has passed unbuilt — "yesterday" is
 still a streak, because today's may just not have been played yet.
+
+## Debug tools
+
+`src/debug.ts`, for testing by hand. **Open every level** (Settings → Debug)
+unlocks every stop on the map and changes nothing else: the car, Continue and
+`unlockedLevel` stay where play left them, though a board won out of order still
+keeps its star record. The tools show only where `__DEV__` is true; putting them
+in a release build means setting `DEBUG_TOOLS` to `true`, and back before a store
+submission, since the switch is a way round the whole ladder.
 
 ## Commands
 
