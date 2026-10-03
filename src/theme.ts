@@ -121,6 +121,8 @@ export const theme = {
   /** The ✕ — the player's note that a square is empty. */
   mark: "#FFFBF0",
   markShadow: "#4F8F33",
+  /** Something not open yet — a stop on the map, the daily before level 10: face and edge. */
+  lockedFace: "#D9D4E4",
   locked: "#B8B2C8",
 
   /** The town that grows on the empty squares of a won board. */
@@ -164,6 +166,13 @@ export const overlayLift = {
   zIndex: 24,
   shadowColor: "transparent",
 } as const;
+
+/**
+ * The low cards — a loss, a restart, a hint for a video. Edge to edge on a phone;
+ * on a tablet a card the width of the screen reads as a banner rather than a
+ * question, so it stops at about a phone's width, under the board it is about.
+ */
+export const sheet = { width: "100%", maxWidth: 520, alignSelf: "center" } as const;
 
 export const radius = {
   sm: 8,

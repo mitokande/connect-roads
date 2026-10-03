@@ -42,3 +42,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# store screenshots: raw captures are an intermediate (store/tools/capture.mjs)
+/store/raw

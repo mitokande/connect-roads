@@ -18,7 +18,8 @@
       "predictiveBackGestureEnabled": false,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#8DD05F"
+        "backgroundColor": "#7CBC5A",
+        "monochromeImage": "./assets/images/adaptive-icon-mono.png"
       },
       "permissions": [
         "android.permission.MODIFY_AUDIO_SETTINGS"

@@ -10,11 +10,11 @@
 // view. The backdrop takes the touches while it is up (a board can't be played
 // under a question about it), and tapping it is the same as *Keep going*.
 
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import React, { useEffect, useRef } from "react";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { font, overlayLift, radius, shadow, theme } from "../theme";
+import { font, overlayLift, radius, shadow, sheet, theme } from "../theme";
 import { Button } from "./Button";
 
 export function RestartConfirm({ onRestart, onCancel }: { onRestart: () => void; onCancel: () => void }) {
@@ -51,7 +51,7 @@ export function RestartConfirm({ onRestart, onCancel }: { onRestart: () => void;
               style={{ flex: 1 }}
               icon={<Ionicons name="car-sport" size={20} color={theme.onAccent} />}
             />
-            <Button label="Start again" tone="ghost" onPress={onRestart} />
+            <Button label="Start again" tone="soft" onPress={onRestart} />
           </View>
         </Pressable>
       </Animated.View>
@@ -68,6 +68,7 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   card: {
+    ...sheet,
     backgroundColor: theme.panel,
     borderRadius: radius.lg,
     padding: 14,

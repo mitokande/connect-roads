@@ -1,7 +1,8 @@
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import React, { useEffect, useState } from "react";
 import { Linking, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 
+import appConfig from "../../app.json";
 import { privacyOptionsRequired, showPrivacyOptions } from "../ads";
 import { DEBUG_TOOLS } from "../debug";
 import { haptics } from "../haptics";
@@ -150,14 +151,18 @@ export function SettingsOverlay({
                   onClose();
                 }}
               />
-              <Button label="Keep" tone="ghost" onPress={() => setConfirming(false)} />
+              <Button label="Keep" tone="soft" onPress={() => setConfirming(false)} />
             </View>
           </View>
         ) : (
-          <Pressable onPress={() => setConfirming(true)} style={styles.reset}>
-            <Ionicons name="trash" size={17} color={theme.danger} />
-            <Text style={styles.resetText}>Reset progress</Text>
-          </Pressable>
+          <View style={styles.footer}>
+            <Pressable onPress={() => setConfirming(true)} style={styles.reset}>
+              <Ionicons name="trash" size={17} color={theme.danger} />
+              <Text style={styles.resetText}>Reset progress</Text>
+            </Pressable>
+            {/* The first thing a support email needs to know. */}
+            <Text style={styles.version}>Version {appConfig.expo.version}</Text>
+          </View>
         )}
 
         <Button label="Close" onPress={onClose} style={{ marginTop: 18 }} />
@@ -234,7 +239,9 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     textTransform: "uppercase",
   },
-  reset: { flexDirection: "row", alignItems: "center", gap: 7, paddingTop: 16 },
+  footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 16 },
+  reset: { flexDirection: "row", alignItems: "center", gap: 7 },
+  version: { color: theme.textDim, fontFamily: font.medium, fontSize: 13 },
   resetText: { color: theme.danger, fontFamily: font.semi, fontSize: 15 },
   confirm: { paddingTop: 16 },
   confirmText: { fontSize: 15, fontFamily: font.medium, color: theme.text, lineHeight: 21 },

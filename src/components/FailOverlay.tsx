@@ -8,13 +8,13 @@
 // the one way on from here that keeps the board, so it leads — but it gives back
 // one heart, not three, and nothing about the answer.
 
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import React, { useEffect, useRef } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
 
 import { useRewardedVideo } from "../hooks/useRewardedVideo";
 import type { Game } from "../state/useGame";
-import { font, overlayLift, radius, shadow, theme } from "../theme";
+import { font, overlayLift, radius, shadow, sheet, theme } from "../theme";
 import { Button } from "./Button";
 
 export function FailOverlay({ game, onExit }: { game: Game; onExit: () => void }) {
@@ -67,13 +67,13 @@ export function FailOverlay({ game, onExit }: { game: Game; onExit: () => void }
         <View style={styles.row}>
           <Button
             label="Try again"
-            tone={game.canRevive ? "ghost" : "primary"}
+            tone={game.canRevive ? "soft" : "primary"}
             disabled={video.busy}
             onPress={game.retry}
             style={{ flex: 1 }}
             icon={<Ionicons name="refresh" size={20} color={game.canRevive ? theme.text : theme.onAccent} />}
           />
-          <Button label="Map" tone="ghost" disabled={video.busy} onPress={onExit} />
+          <Button label="Map" tone="soft" disabled={video.busy} onPress={onExit} />
         </View>
       </Animated.View>
     </View>
@@ -88,6 +88,7 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   card: {
+    ...sheet,
     backgroundColor: theme.panel,
     borderRadius: radius.lg,
     padding: 14,

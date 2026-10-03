@@ -9,7 +9,7 @@
 // only the confetti is an overlay, because it belongs to the whole screen and
 // touches nothing.
 
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import React, { useEffect, useMemo, useRef } from "react";
 import { Animated, Easing, StyleSheet, useWindowDimensions, View } from "react-native";
 

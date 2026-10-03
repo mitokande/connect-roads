@@ -6,7 +6,7 @@
 // can want; the locked ones say how many stars are still to go rather than the
 // bare threshold, which is the number a player can do something about.
 
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import React from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 

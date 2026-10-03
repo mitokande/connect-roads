@@ -9,8 +9,9 @@
 // car's region without drawing everything above it first.
 //
 // Stops show what they have to show and nothing more: a cleared level carries
-// its best star record, the current one pulses with a car parked on it, and the
-// rest are locked. The screen opens scrolled to wherever the car is.
+// its best star record, the current one pulses with the player's car on the road
+// pulling into it, and the rest are locked. The screen opens scrolled to wherever
+// the car is.
 //
 // **The map keeps the towns the player built.** Every cleared stop puts a piece
 // of its region's town beside the road — a barn in the meadows, a tower in the
@@ -18,7 +19,7 @@
 // region starts as bare lawn and fills in as it is played, so the map shows how
 // far the player has come *and* how well, without a number on it.
 
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import React, { useEffect, useMemo, useRef } from "react";
 import {
   Animated,
@@ -46,6 +47,9 @@ const PER_ROW = 4;
 const ROW_H = 96;
 const NODE = 58;
 const XS = [0.14, 0.38, 0.62, 0.86];
+/** The player's car on the map: short enough to fit the road between two stops. */
+const CAR_L = 28;
+const CAR_W = 18;
 /** A piece of the map's town. */
 const TOWN = 30;
 /** Below the road, between two stops. */
@@ -194,6 +198,9 @@ function Region({
     return { x: XS[col] * width, y: row * ROW_H + ROW_H / 2 + 10 };
   };
 
+  // How far a turn between rows swings out past the end stops.
+  const bulgeAt = (q: { x: number }) => (q.x > width / 2 ? 1 : -1) * width * 0.13;
+
   let d = "";
   for (let i = 0; i < levels.length; i++) {
     const p = pos(i);
@@ -204,10 +211,27 @@ function Region({
     const q = pos(i - 1);
     if (Math.abs(q.y - p.y) < 1) d += ` L ${p.x},${p.y}`;
     else {
-      const bulge = (q.x > width / 2 ? 1 : -1) * width * 0.13;
+      const bulge = bulgeAt(q);
       d += ` C ${q.x + bulge},${q.y} ${p.x + bulge},${p.y} ${p.x},${p.y}`;
     }
   }
+
+  // The car is on the road into the current stop, nose towards it: halfway along
+  // the straight from the stop before, or at the apex of the turn that leads in.
+  // It used to be parked off the road at the stop's shoulder, on the lawn where
+  // the row above builds its town, and sat on top of whatever had grown there.
+  // A region's first stop has no road behind it worth the name, so the car
+  // waits beside that one instead.
+  const here = unlockedLevel <= LEVEL_COUNT ? levels.indexOf(unlockedLevel) : -1;
+  const car = (() => {
+    if (here < 0) return null;
+    const p = pos(here);
+    if (here === 0) return { x: p.x + NODE / 2 + 2, y: p.y - NODE / 2 - 6, angle: -20 };
+    const q = pos(here - 1);
+    if (Math.abs(q.y - p.y) < 1) return { x: (q.x + p.x) / 2, y: p.y, angle: p.x > q.x ? 0 : 180 };
+    // The turn's midpoint: three quarters of the bulge out, heading down the page.
+    return { x: q.x + bulgeAt(q) * 0.75, y: (q.y + p.y) / 2, angle: 90 };
+  })();
 
   return (
     <View style={styles.region}>
@@ -289,11 +313,23 @@ function Region({
               locked={!openAll && level > unlockedLevel}
               current={level === unlockedLevel}
               stars={stars[level] ?? 0}
-              paint={paint}
               onPick={onPick}
             />
           );
         })}
+        {car ? (
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              left: car.x - CAR_L / 2,
+              top: car.y - CAR_W / 2,
+              transform: [{ rotate: `${car.angle}deg` }],
+            }}
+          >
+            <Car length={CAR_L} width={CAR_W} body={paint?.body} edge={paint?.edge} roof={paint?.roof} />
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -308,7 +344,6 @@ function Stop({
   locked,
   current,
   stars,
-  paint,
   onPick,
 }: {
   level: number;
@@ -319,7 +354,6 @@ function Stop({
   locked: boolean;
   current: boolean;
   stars: number;
-  paint?: Paint;
   onPick: (level: number) => void;
 }) {
   const pulse = useRef(new Animated.Value(0)).current;
@@ -335,7 +369,7 @@ function Stop({
     return () => loop.stop();
   }, [current, pulse]);
 
-  const face = locked ? "#D9D4E4" : current ? theme.accent : color;
+  const face = locked ? theme.lockedFace : current ? theme.accent : color;
   const edge = locked ? theme.locked : current ? theme.accentDark : dark;
 
   return (
@@ -382,11 +416,6 @@ function Stop({
               style={k === 2 ? { marginTop: -3 } : undefined}
             />
           ))}
-        </View>
-      ) : null}
-      {current ? (
-        <View pointerEvents="none" style={styles.car}>
-          <Car length={30} width={19} body={paint?.body} edge={paint?.edge} roof={paint?.roof} />
         </View>
       ) : null}
     </View>
@@ -468,6 +497,5 @@ const styles = StyleSheet.create({
     borderColor: theme.accent,
   },
   stars: { flexDirection: "row", marginTop: -8, backgroundColor: "rgba(255,249,238,0.9)", borderRadius: 10, paddingHorizontal: 3 },
-  car: { position: "absolute", top: -16, right: -16, transform: [{ rotate: "-20deg" }] },
   footer: { textAlign: "center", fontFamily: font.semi, fontSize: 15, color: theme.textDim, marginTop: 4 },
 });

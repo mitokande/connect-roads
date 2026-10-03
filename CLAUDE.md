@@ -287,7 +287,9 @@ src/ads.ts                  rewarded video (revive, hint); skipped with the rewa
 src/sound.ts                sound effects and the music loop, one switch each
 src/theme.ts                palette, fonts, regions and their looks; colour is assigned by function
 assets/sfx/                 GENERATED — the baked sounds and music
-assets/images/              GENERATED — icon, adaptive icon, splash, favicon
+assets/images/              GENERATED — icon, adaptive icon (+ monochrome), splash, favicon
+assets/source/              the two painted masters: the icon, the Play feature graphic's landscape
+store/                      store listing art: feature graphic, captioned screenshots, and store/tools
 scripts/buildLevels.ts      npm run levels:build
 scripts/buildDaily.ts       npm run daily:build
 scripts/buildSounds.ts      npm run sfx:build
@@ -296,6 +298,10 @@ scripts/buildArt.ts         npm run art:build
 
 `src/game` never imports React. That is what lets `runTests.ts` play thousands
 of boards to completion in a couple of seconds with no renderer.
+
+Icons are imported by path — `@expo/vector-icons/Ionicons` — never from the
+package index, which pulls in every icon set's font: 3.8MB of the 8.6MB bundle
+was glyphs the app never draws.
 
 ## Generation, and why the bank is baked
 
@@ -644,9 +650,38 @@ above reached for the same patch of lawn between them. A region starts as bare
 lawn and fills in as it is played, so the map shows how far the player has come
 and how well, without another number on it.
 
-**Store art is generated too.** `npm run art:build` draws the icon, the Android
-adaptive icon, the splash mark and the favicon as SVG in `scripts/buildArt.ts`
-— using the board's own road numbers — and rasterises them with resvg.
+**Store art is baked too, and the icon is the one painted thing.**
+`npm run art:build` (`scripts/buildArt.ts`, rasterised with resvg) writes the
+icon, the Android adaptive icon and its monochrome layer, the splash mark, the
+favicon and Google Play's feature graphic.
+
+- **The icon is a poster, not a piece of the board.** It used to be the board's
+  own parts drawn at board scale — honest, but at 60px on a home screen it was a
+  lot of lawn and a small car. The picture is now `assets/source/icon-art.png`,
+  painted by Nano Banana 2 Lite (`gemini-3.1-flash-lite-image`) from the old icon
+  as its reference: the same top-down scene, the car grown into the hero. The
+  script only frames it — opaque RGB, since App Store Connect refuses a
+  marketing icon with an alpha channel — and repainting is a manual step. The
+  adaptive icon uses it full bleed: the launcher's mask keeps the middle
+  two-thirds, which is the car on its bend.
+- **The monochrome layer** is what Android 13+ tints for themed icons: the road
+  bend and the car as one silhouette, inside the safe circle.
+- **The splash is the wordmark exactly as `Logo` sets it** — CONNECT over R◎ADS,
+  measured with the same font — so the native splash hands over to the title
+  scene without the logo changing shape. It used to be the roundabout *above*
+  the words, a second logo seen for one second per launch.
+- **Store screenshots are real play.** `store/tools/capture.mjs` drives the web
+  build in a headless browser along each board's own solution, and
+  `store/tools/compose.py` frames the captures under captions at the sizes the
+  stores ask for (iPhone 6.9", iPad 13", Play phone). Neither tool is a
+  dependency of the app; the header of each says how to run it.
+
+**A tablet gets a column, not a stretched phone.** The home screen is a centred
+column (wider on a big iPad) whose diorama is fitted to the height that is left —
+an iPad on its side is wide and short, so it gets the three-row loop — and the
+low cards (`sheet` in `theme.ts`) stop at about a phone's width. The board grows
+to 640 on a tablet: capped at a phone's 470, an 8×8 sat in the middle of an iPad
+with squares no bigger than on the phone.
 
 ## Input
 
@@ -1038,7 +1073,7 @@ npm run levels:build  regenerate the level bank (changes existing levels)
 npm run levels:build -- 121 136   rebuild only the bands starting there
 npm run daily:build   regenerate the daily bank (~2 min, changes the days to come)
 npm run sfx:build     re-synthesise every sound and the music loop
-npm run art:build     re-draw the icon, adaptive icon, splash and favicon
+npm run art:build     re-bake the icon, adaptive + monochrome icon, splash, favicon, feature graphic
 npx expo export --platform android   bundle check
 ```
 

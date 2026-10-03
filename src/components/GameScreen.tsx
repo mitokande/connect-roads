@@ -13,7 +13,7 @@
 // score is never a new number to read, it is the thing the player was already
 // watching all game, paid out.
 
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Easing, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
@@ -28,7 +28,7 @@ import { sound } from "../sound";
 import { bandFor, regionForSize } from "../game/levels";
 import { font, radius, regionForLevel, shadow, theme } from "../theme";
 import { Board } from "./Board";
-import { IconButton } from "./Button";
+import { HelpGlyph, IconButton } from "./Button";
 import { FailOverlay } from "./FailOverlay";
 import { HelpOverlay } from "./HelpOverlay";
 import { HintOffer } from "./HintOffer";
@@ -59,8 +59,11 @@ export function GameScreen({
   const { width, height } = useWindowDimensions();
   // Every noise the board makes, derived from what changed in it.
   useGameSounds(game);
-  // Leave room for the header, banner and tools on a short phone.
-  const boardWidth = Math.min(width - 20, 470, height - 300);
+  // Leave room for the header, banner and tools on a short phone. A tablet gets
+  // a bigger board: capped at a phone's, an 8×8 sat in the middle of an iPad
+  // like a postage stamp, with squares no bigger than on the phone in the other hand.
+  const tablet = Math.min(width, height) >= 600;
+  const boardWidth = Math.min(width - 20, tablet ? 640 : 470, height - 300);
   const daily = isDaily(game.level);
   // A daily isn't on the road trip: it is drawn in the world its size would be.
   const region = daily ? regionForSize(game.puzzle.size) : bandFor(game.level).region;
@@ -133,7 +136,7 @@ export function GameScreen({
         </View>
         <View style={styles.headerRight}>
           <IconButton onPress={() => setHelp(true)}>
-            <Ionicons name="help" size={24} color={theme.text} />
+            <HelpGlyph />
           </IconButton>
           <IconButton onPress={onSettings}>
             <Ionicons name="settings-sharp" size={21} color={theme.text} />
@@ -141,7 +144,7 @@ export function GameScreen({
         </View>
       </View>
 
-      <View style={styles.hud}>
+      <View style={[styles.hud, { maxWidth: Math.max(480, boardWidth + 10) }]}>
         <Hearts hearts={game.hearts} stars={game.celebrate} />
         <View style={styles.found}>
           <Ionicons name="construct" size={15} color={theme.accentDark} />
@@ -380,10 +383,13 @@ function Banner({
   } else if (phase === "won") {
     body = <Text style={[styles.banner, { color: theme.goodDark }]}>Green light — go!</Text>;
   } else {
+    // Two lines, broken by hand: one sentence per gesture. Left to wrap, the one
+    // sentence it used to be broke wherever the width said, and on most phones
+    // that left "rule out" alone on the second line.
     body = (
       <Text style={styles.banner}>
-        <Text style={styles.bannerStrong}>Double tap</Text> where road must go · <Text style={styles.bannerStrong}>tap</Text> or{" "}
-        <Text style={styles.bannerStrong}>swipe</Text> to rule out
+        <Text style={styles.bannerStrong}>Double tap</Text> where the road must go{"\n"}
+        <Text style={styles.bannerStrong}>Tap</Text> or <Text style={styles.bannerStrong}>swipe</Text> to rule a square out
       </Text>
     );
   }

@@ -2,7 +2,7 @@
 // the board draws for it — so the help can't describe a board the player never
 // sees.
 
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import React from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
@@ -78,7 +78,7 @@ export function HelpOverlay({
             title="Tap or swipe to rule out"
           >
             A single tap crosses a square out; drag to cross out a run. Crosses are free notes —
-            never checked. Once a row's count is complete, sweep the rest of it out yourself.
+            never checked, never charged.
           </Rule>
           <Rule
             art={

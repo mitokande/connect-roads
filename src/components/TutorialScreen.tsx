@@ -17,7 +17,7 @@
 //    and it is also what lets a lone tap on a square that should be double-tapped
 //    be caught and answered with "twice, quickly".
 
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 

@@ -9,7 +9,7 @@ import { haptics } from "../haptics";
 import { sound } from "../sound";
 import { font, radius, theme } from "../theme";
 
-export type Tone = "primary" | "teal" | "ghost" | "danger" | "gold";
+export type Tone = "primary" | "teal" | "ghost" | "soft" | "danger" | "gold";
 
 export type ButtonProps = {
   label: string;
@@ -27,6 +27,10 @@ export const TONES: Record<Tone, { face: string; edge: string; ink: string }> = 
   danger: { face: theme.danger, edge: theme.dangerDark, ink: "#FFFFFF" },
   gold: { face: theme.gold, edge: theme.goldDark, ink: theme.text },
   ghost: { face: theme.panel, edge: theme.panelEdge, ink: theme.text },
+  // The second choice on a card. A ghost's face is the card's own paper, so on a
+  // card it vanished and left a label floating over a line; this is a shade
+  // darker, so it still reads as a button — just not the one to press first.
+  soft: { face: theme.panelLine, edge: theme.panelEdge, ink: theme.text },
 };
 
 export const DEPTH = 5;
@@ -71,6 +75,14 @@ export function Button({ label, onPress, tone = "primary", size = "md", disabled
       </View>
     </Pressable>
   );
+}
+
+/**
+ * The help button's "?", set in the game's own bold type. Ionicons' `help` is a
+ * hairline, and beside the filled gear it read as the one control drawn in pencil.
+ */
+export function HelpGlyph({ size = 27 }: { size?: number }) {
+  return <Text style={[styles.help, { fontSize: size, lineHeight: size * 1.2 }]}>?</Text>;
 }
 
 /** A round icon button — the header's back / help / settings controls. */
@@ -163,6 +175,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.18)",
   },
   label: { fontFamily: font.bold, letterSpacing: 0.3 },
+  help: { fontFamily: font.bold, color: theme.text, includeFontPadding: false, textAlign: "center" },
   icon: {
     position: "absolute",
     left: 0,

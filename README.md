@@ -13,9 +13,9 @@ road — not which ones. That's the whole puzzle.
 - **Double tap** a square to claim it carries road. A wrong claim is refused and
   costs a heart, so claim what you can prove.
 - **Single tap** to cross a square out, or **swipe** to cross out a run of them.
-  Crosses are free notes — never checked, never penalised. Every ✕ on the board
-  is yours; the game never crosses anything out for you.
-- A clue turns **green** when you've found all its road, and becomes a red
+  Crosses are free notes — never checked, never penalised.
+- A clue turns **green** when you've found all its road, and the rest of that
+  line crosses itself out. It becomes a red
   **warning sign** if you've ruled out so much of a line that its count can't be
   met. A claimed square stays claimed — claims are checked, so they're always true.
 
@@ -25,7 +25,7 @@ this at any time, not only once every square is found.
 - Push the road into a square you haven't claimed yet and it **claims it for
   you** — the same bet as a double tap, so a wrong push costs a heart and
   crosses the square out.
-- Squares you've crossed out yourself turn the road away for nothing. Once every
+- Crossed-out squares turn the road away for nothing. Once every
   road square is found, pushing costs nothing at all.
 - Drag back along the road to rub it out. Finish the route and five cars drive
   it, the road lights up, and a little town grows on every square it missed.

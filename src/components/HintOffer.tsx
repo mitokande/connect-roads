@@ -9,12 +9,12 @@
 // Low on the screen like the restart question, with the same backdrop: the board
 // can't be played under a question about it, and tapping outside is *Not now*.
 
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import React, { useEffect, useRef } from "react";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useRewardedVideo } from "../hooks/useRewardedVideo";
-import { font, overlayLift, radius, shadow, theme } from "../theme";
+import { font, overlayLift, radius, shadow, sheet, theme } from "../theme";
 import { Button } from "./Button";
 
 export function HintOffer({ onReward, onClose }: { onReward: () => void; onClose: () => void }) {
@@ -56,7 +56,7 @@ export function HintOffer({ onReward, onClose }: { onReward: () => void; onClose
               style={{ flex: 1 }}
               icon={<Ionicons name="play-circle" size={21} color={theme.onAccent} />}
             />
-            <Button label="Not now" tone="ghost" disabled={video.busy} onPress={onClose} />
+            <Button label="Not now" tone="soft" disabled={video.busy} onPress={onClose} />
           </View>
           {video.missed ? <Text style={styles.missed}>No video right now — try again in a moment.</Text> : null}
         </Pressable>
@@ -74,6 +74,7 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   card: {
+    ...sheet,
     backgroundColor: theme.panel,
     borderRadius: radius.lg,
     padding: 14,

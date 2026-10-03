@@ -2,7 +2,7 @@
 // with toy cars going round it — what the game *is*, running, before a word of
 // instruction. Below it, one way in.
 
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import React, { useEffect, useRef, useState } from "react";
 import { Animated, Easing, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
@@ -13,10 +13,15 @@ import { haptics } from "../haptics";
 import type { Progress } from "../state/useGame";
 import { sound } from "../sound";
 import { font, radius, regionForLevel, shadow, theme } from "../theme";
-import { Button, IconButton } from "./Button";
+import { Button, HelpGlyph, IconButton } from "./Button";
 import { Diorama } from "./Diorama";
 import { Logo } from "./Logo";
 import { Scenery } from "./Scenery";
+
+/** The page's widest on a phone-sized tablet: about a big phone's, so it gets the same front door. */
+const CONTENT_MAX = 560;
+/** The diorama's columns (`Diorama`), for fitting its height. */
+const COLS_ON_HOME = 6;
 
 export function HomeScreen({
   progress,
@@ -42,6 +47,19 @@ export function HomeScreen({
   const done = progress.unlockedLevel - 1;
   const stars = Object.values(progress.stars).reduce((a, b) => a + b, 0);
   const compact = height < 700;
+  // On a tablet the page is a phone-width column in the middle of the landscape:
+  // a play button stretched across a whole iPad reads as a banner, not a button.
+  // A big tablet's column grows a little with it, or the front door is a strip
+  // of buttons under a lot of lawn.
+  const tablet = Math.min(width, height) >= 600;
+  const column = tablet ? Math.min(width, 680, Math.max(CONTENT_MAX, width * 0.62)) : width;
+  // A tall screen gets a taller loop; a tablet on its side is wide and short.
+  const rows = height > 800 && height > width ? 4 : 3;
+  // The diorama takes the column, but never more height than the page has left
+  // between the wordmark and the buttons.
+  const diorama = tablet
+    ? Math.min(column - 44, ((height - 580) * COLS_ON_HOME) / rows + 27)
+    : Math.min(width - 44, 380);
 
   // The wordmark floats, very gently: the only thing on the page besides the
   // traffic that moves, and it says "this is a toy" before anything else does.
@@ -62,7 +80,7 @@ export function HomeScreen({
       {/* The world the player has got to: the home screen is where the trip shows. */}
       <Scenery horizon={0.36} region={bandFor(level).region} />
 
-      <View style={styles.content}>
+      <View style={[styles.content, { maxWidth: column }]}>
         <View style={styles.topBar}>
           <View style={styles.chips}>
             <Pressable
@@ -83,7 +101,7 @@ export function HomeScreen({
           </View>
           <View style={styles.topRight}>
             <IconButton onPress={onHelp}>
-              <Ionicons name="help" size={24} color={theme.text} />
+              <HelpGlyph />
             </IconButton>
             <IconButton onPress={onSettings}>
               <Ionicons name="settings-sharp" size={21} color={theme.text} />
@@ -98,14 +116,14 @@ export function HomeScreen({
             { transform: [{ translateY: bob.interpolate({ inputRange: [0, 1], outputRange: [0, -6] }) }] },
           ]}
         >
-          <Logo size={Math.min(76, width * 0.17)} />
+          <Logo size={Math.min(tablet ? 92 : 76, width * 0.17)} />
           <Text style={styles.tagline}>Count the clues · Lay the road</Text>
         </Animated.View>
 
         <View style={styles.dioramaWrap}>
           <Diorama
-            width={Math.min(width - 44, 380)}
-            rows={height > 800 ? 4 : 3}
+            width={diorama}
+            rows={rows}
             paints={fleetById(progress.fleet).paints}
             region={bandFor(level).region}
           />
@@ -215,19 +233,21 @@ function DailyButton({ progress, onPress }: { progress: Progress; onPress: () =>
         sound.press();
         onPress();
       }}
-      style={{ flex: 1, opacity: locked ? 0.6 : 1 }}
+      style={{ flex: 1 }}
     >
       <View style={{ paddingTop: down ? DEPTH : 0 }}>
-        <View style={[styles.daily, { borderBottomWidth: down ? 0 : DEPTH }]}>
+        {/* Locked, it wears the map's locked-stop paint rather than a faded gold:
+            gold at 60% over the hills came out olive, which read as broken. */}
+        <View style={[styles.daily, locked && styles.dailyLocked, { borderBottomWidth: down ? 0 : DEPTH }]}>
           <View style={styles.dailyShine} />
           <Ionicons
             name={locked ? "lock-closed" : built ? "checkmark-circle" : "calendar"}
             size={22}
-            color={theme.text}
+            color={locked ? theme.textDim : theme.text}
           />
           <View style={{ flexShrink: 1 }}>
-            <Text style={styles.dailyLabel}>Daily road</Text>
-            <Text style={styles.dailySub} numberOfLines={1}>
+            <Text style={[styles.dailyLabel, locked && { color: theme.textDim }]}>Daily road</Text>
+            <Text style={[styles.dailySub, locked && { color: theme.textDim }]} numberOfLines={1}>
               {sub}
             </Text>
           </View>
@@ -259,6 +279,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
     overflow: "hidden",
   },
+  dailyLocked: { backgroundColor: theme.lockedFace, borderBottomColor: theme.locked },
   dailyShine: {
     position: "absolute",
     left: 8,
@@ -284,7 +305,7 @@ const styles = StyleSheet.create({
     borderColor: "#FFFFFF",
   },
   streakText: { color: "#FFFFFF", fontSize: 12, fontFamily: font.bold, includeFontPadding: false },
-  content: { flex: 1, paddingHorizontal: 20, paddingTop: 8 },
+  content: { flex: 1, width: "100%", alignSelf: "center", paddingHorizontal: 20, paddingTop: 8 },
 
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   chips: { flexDirection: "row", gap: 8 },
